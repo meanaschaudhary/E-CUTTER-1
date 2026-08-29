@@ -1,0 +1,699 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  WorkflowStep,
+  UploadedDocument,
+  PrintSettings,
+  DEFAULT_PRINT_SETTINGS,
+  CardTemplate,
+  PaperSize,
+  PAPER_DIMENSIONS_MM,
+} from './types';
+import { Navbar } from './components/Navbar';
+import { WorkflowBar } from './components/WorkflowBar';
+import { FileUploader } from './components/FileUploader';
+import { PageSelector } from './components/PageSelector';
+import { Editor } from './components/Editor';
+import { PrintSheetView } from './components/PrintSheetView';
+import { ExportSection } from './components/ExportSection';
+import { PasswordModal } from './components/PasswordModal';
+import { HelpModal } from './components/HelpModal';
+import { PrivacyModal } from './components/PrivacyModal';
+import { SettingsModal } from './components/SettingsModal';
+import { Footer } from './components/Footer';
+import { ToastContainer, ToastMessage } from './components/Toast';
+import { loadPdfDocument, loadImageDocument } from './utils/pdfEngine';
+import { renderCroppedCard, autoProcessFullDocument } from './utils/imageEngine';
+import { generateSampleAadhaarDoc, generateSamplePanDoc } from './utils/sampleGenerator';
+
+export const App: React.FC = () => {
+  // Main Application State
+  const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
+  const [document, setDocument] = useState<UploadedDocument | null>(null);
+
+  // Modal States
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [pendingPdfData, setPendingPdfData] = useState<{
+    fileData: ArrayBuffer;
+    fileName: string;
+  } | null>(null);
+
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Settings & Preferences
+  const [defaultDpi, setDefaultDpi] = useState<number>(600);
+  const [defaultPaperSize, setDefaultPaperSize] = useState<PaperSize>('A4');
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(DEFAULT_PRINT_SETTINGS);
+  const [customTemplates, setCustomTemplates] = useState<CardTemplate[]>([]);
+
+  // Rasterized Final Cards (Front & Back Data URLs)
+  const [frontCardUrl, setFrontCardUrl] = useState<string | null>(null);
+  const [backCardUrl, setBackCardUrl] = useState<string | null>(null);
+  const [isProcessingCards, setIsProcessingCards] = useState<boolean>(false);
+
+  // Notification Toasts
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addToast = useCallback(
+    (text: string, type: 'success' | 'error' | 'info' = 'info') => {
+      const id = `${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      setToasts((prev) => [...prev, { id, text, type }]);
+    },
+    []
+  );
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Update Settings
+  const handleUpdatePrintSettings = (newSettings: Partial<PrintSettings>) => {
+    setPrintSettings((prev) => ({ ...prev, ...newSettings }));
+  };
+
+  // Helper to build an UploadedDocument from PDF load result
+  const buildDocFromPdf = (
+    res: import('./utils/pdfEngine').PdfLoadResult,
+    fileName: string,
+    fileSize: number
+  ): UploadedDocument => ({
+    id: `doc_${Date.now()}`,
+    fileName,
+    fileSize,
+    fileType: 'pdf',
+    pageCount: res.pageCount,
+    isPasswordProtected: res.isPasswordProtected,
+    pages: res.pages,
+    activeSide: 'front',
+    hasBackSide: res.pageCount > 1,
+    selectedTemplateId: 'aadhaar-pvc',
+    targetWidthMm: 86.0,
+    targetHeightMm: 54.0,
+    unit: 'mm',
+    targetDpi: defaultDpi,
+    front: {
+      pageIndex: 0,
+      cropBox: { x: 0.08, y: 0.62, width: 0.42, height: 0.32 },
+      rotation: 0,
+      adjustments: {
+        brightness: 0,
+        contrast: 0,
+        saturation: 0,
+        sharpen: 'none',
+        grayscale: false,
+      },
+      aspectRatioMode: 'cr80',
+    },
+    back:
+      res.pageCount > 1
+        ? {
+            pageIndex: 1,
+            cropBox: { x: 0.08, y: 0.62, width: 0.42, height: 0.32 },
+            rotation: 0,
+            adjustments: {
+              brightness: 0,
+              contrast: 0,
+              saturation: 0,
+              sharpen: 'none',
+              grayscale: false,
+            },
+            aspectRatioMode: 'cr80',
+          }
+        : null,
+  });
+
+  // 1. Process Uploaded File
+  const handleFileUpload = async (file: File) => {
+    try {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const arrayBuffer = await file.arrayBuffer();
+        setPendingPdfData({ fileData: arrayBuffer, fileName: file.name });
+
+        const res = await loadPdfDocument(arrayBuffer);
+        if (res.isPasswordProtected) {
+          setIsPasswordModalOpen(true);
+          setPasswordError(null);
+          return;
+        }
+
+        const doc = buildDocFromPdf(res, file.name, file.size);
+        setDocument(doc);
+        setCurrentStep(doc.pageCount > 1 ? 'pages' : 'crop');
+        addToast(`PDF "${file.name}" loaded successfully (${doc.pageCount} pages)`, 'success');
+      } else {
+        const page = await loadImageDocument(file);
+        const doc: UploadedDocument = {
+          id: `doc_${Date.now()}`,
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: 'image',
+          pageCount: 1,
+          isPasswordProtected: false,
+          pages: [page],
+          activeSide: 'front',
+          hasBackSide: false,
+          selectedTemplateId: 'aadhaar-pvc',
+          targetWidthMm: 86.0,
+          targetHeightMm: 54.0,
+          unit: 'mm',
+          targetDpi: defaultDpi,
+          front: {
+            pageIndex: 0,
+            cropBox: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+            rotation: 0,
+            adjustments: {
+              brightness: 0,
+              contrast: 0,
+              saturation: 0,
+              sharpen: 'none',
+              grayscale: false,
+            },
+            aspectRatioMode: 'cr80',
+          },
+          back: null,
+        };
+        setDocument(doc);
+        setCurrentStep('crop');
+        addToast(`Image "${file.name}" loaded successfully`, 'success');
+      }
+    } catch (err: any) {
+      console.error('File load error:', err);
+      if (err.name === 'PasswordException' || err.message?.includes('password')) {
+        setIsPasswordModalOpen(true);
+        setPasswordError('This PDF is password protected. Enter password to continue.');
+      } else {
+        addToast('Error loading file. Ensure it is a valid PDF or image.', 'error');
+      }
+    }
+  };
+
+  // 2. Submit Password for PDF
+  const handlePasswordSubmit = async (password: string) => {
+    if (!pendingPdfData) return;
+    try {
+      const res = await loadPdfDocument(
+        pendingPdfData.fileData,
+        password
+      );
+      const doc = buildDocFromPdf(
+        res,
+        pendingPdfData.fileName,
+        pendingPdfData.fileData.byteLength
+      );
+      setDocument(doc);
+      setIsPasswordModalOpen(false);
+      setPasswordError(null);
+      setPendingPdfData(null);
+      setCurrentStep(doc.pageCount > 1 ? 'pages' : 'crop');
+      addToast('PDF decrypted and loaded successfully', 'success');
+    } catch (err) {
+      setPasswordError('Incorrect PDF password. Please try again.');
+    }
+  };
+
+  // 3. Load Sample Mock Documents
+  const handleLoadSample = async (type: 'aadhaar' | 'pan') => {
+    try {
+      addToast(`Generating sample ${type === 'aadhaar' ? 'Aadhaar Card' : 'PAN Card'}...`, 'info');
+      const doc =
+        type === 'aadhaar'
+          ? await generateSampleAadhaarDoc()
+          : await generateSamplePanDoc();
+
+      setDocument(doc);
+      setCurrentStep('crop');
+      addToast(`Sample ${type.toUpperCase()} loaded! Ready to test crop & print.`, 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Error generating sample document.', 'error');
+    }
+  };
+
+  // 4. Auto Process Entire Document
+  const handleAutoProcess = async () => {
+    if (!document) return;
+    try {
+      addToast('Analyzing document layout & detecting card boundaries...', 'info');
+      const updated = await autoProcessFullDocument(document);
+      setDocument(updated);
+      setCurrentStep('crop');
+      addToast('Document auto-processed with optimal crop boundaries!', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Auto process completed with standard defaults.', 'info');
+    }
+  };
+
+  // 5. Render Cropped Cards to High-Res Data URLs
+  const rasterizeCroppedCards = useCallback(async (docToRasterize: UploadedDocument) => {
+    setIsProcessingCards(true);
+    try {
+      const frontPage = docToRasterize.pages[docToRasterize.front.pageIndex] || docToRasterize.pages[0];
+      const frontUrl = await renderCroppedCard(
+        frontPage.dataUrl,
+        docToRasterize.front.cropBox,
+        docToRasterize.front.rotation,
+        docToRasterize.front.adjustments,
+        docToRasterize.targetWidthMm,
+        docToRasterize.targetHeightMm,
+        docToRasterize.targetDpi
+      );
+      setFrontCardUrl(frontUrl);
+
+      if (docToRasterize.hasBackSide && docToRasterize.back) {
+        const backPage = docToRasterize.pages[docToRasterize.back.pageIndex] || docToRasterize.pages[0];
+        const backUrl = await renderCroppedCard(
+          backPage.dataUrl,
+          docToRasterize.back.cropBox,
+          docToRasterize.back.rotation,
+          docToRasterize.back.adjustments,
+          docToRasterize.targetWidthMm,
+          docToRasterize.targetHeightMm,
+          docToRasterize.targetDpi
+        );
+        setBackCardUrl(backUrl);
+      } else {
+        setBackCardUrl(null);
+      }
+    } catch (err) {
+      console.error('Card rasterization failed:', err);
+      addToast('Error rendering cropped card graphics.', 'error');
+    } finally {
+      setIsProcessingCards(false);
+    }
+  }, [addToast]);
+
+  // Transition to Print & Export step
+  const handleProceedToPrint = async () => {
+    if (!document) return;
+    await rasterizeCroppedCards(document);
+    setCurrentStep('print');
+  };
+
+  // Transition to Final Export view
+  const handleProceedToExport = async () => {
+    if (!document) return;
+    if (!frontCardUrl) {
+      await rasterizeCroppedCards(document);
+    }
+    setCurrentStep('export');
+  };
+
+  // Native Print Trigger
+  const handlePrintNow = async () => {
+    if (!document) return;
+    if (!frontCardUrl) {
+      await rasterizeCroppedCards(document);
+    }
+    // Allow React to flush the DOM to #print-mount-root
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
+
+  // Clear Workspace & Purge Memory
+  const handleClearWorkspace = () => {
+    setDocument(null);
+    setFrontCardUrl(null);
+    setBackCardUrl(null);
+    setPendingPdfData(null);
+    setCurrentStep('upload');
+    addToast('Workspace cleared. Document memory purged.', 'info');
+  };
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+O: Open file
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        fileInputRef.current?.click();
+      }
+      // Ctrl+P: Print
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p' && (currentStep === 'print' || currentStep === 'export')) {
+        e.preventDefault();
+        handlePrintNow();
+      }
+      // Escape: Close modals
+      if (e.key === 'Escape') {
+        setIsHelpOpen(false);
+        setIsPrivacyOpen(false);
+        setIsSettingsOpen(false);
+        if (isPasswordModalOpen) {
+          setIsPasswordModalOpen(false);
+          setPendingPdfData(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentStep, isPasswordModalOpen]);
+
+  // Paper measurements for print container
+  const baseDimensions = PAPER_DIMENSIONS_MM[printSettings.paperSize] || {
+    width: 210,
+    height: 297,
+  };
+  const pageWidthMm =
+    printSettings.orientation === 'portrait'
+      ? baseDimensions.width
+      : baseDimensions.height;
+  const pageHeightMm =
+    printSettings.orientation === 'portrait'
+      ? baseDimensions.height
+      : baseDimensions.width;
+  const cardW = document?.targetWidthMm || 86;
+  const cardH = document?.targetHeightMm || 54;
+
+  const printCardItems: Array<{ type: 'front' | 'back'; url: string; id: string }> = [];
+  for (let c = 0; c < printSettings.copies; c++) {
+    if (frontCardUrl && printSettings.duplexMode !== 'back-only') {
+      printCardItems.push({ type: 'front', url: frontCardUrl, id: `f-${c}` });
+    }
+    if (backCardUrl && printSettings.duplexMode !== 'front-only') {
+      printCardItems.push({ type: 'back', url: backCardUrl, id: `b-${c}` });
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] flex flex-col font-sans antialiased">
+      {/* Hidden File Input for Keyboard Shortcuts & Header */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,application/pdf,image/png,image/jpeg,image/jpg"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files[0]) {
+            handleFileUpload(e.target.files[0]);
+          }
+        }}
+      />
+
+      {/* Top Professional Header */}
+      <Navbar
+        onOpenFile={() => fileInputRef.current?.click()}
+        onOpenHelp={() => setIsHelpOpen(true)}
+        onOpenPrivacy={() => setIsPrivacyOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onClearWorkspace={handleClearWorkspace}
+        hasDocument={!!document}
+      />
+
+      {/* 4-Step Interactive Workflow Indicator */}
+      <WorkflowBar
+        currentStep={
+          currentStep === 'pages'
+            ? 'select'
+            : currentStep === 'print' || currentStep === 'export'
+            ? 'export'
+            : currentStep
+        }
+        onStepClick={(step) => {
+          if (step === 'select') {
+            setCurrentStep('pages');
+          } else if (step === 'export') {
+            handleProceedToPrint();
+          } else {
+            setCurrentStep(step);
+          }
+        }}
+        hasDocument={!!document}
+        hasCropped={!!frontCardUrl}
+      />
+
+      {/* Main Dynamic Workspace Body */}
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-6">
+        {/* STEP 1: UPLOAD SCREEN */}
+        {currentStep === 'upload' && (
+          <FileUploader
+            onFileUpload={handleFileUpload}
+            onLoadSampleAadhaar={() => handleLoadSample('aadhaar')}
+            onLoadSamplePan={() => handleLoadSample('pan')}
+          />
+        )}
+
+        {/* STEP 2: MULTI-PAGE SELECTOR */}
+        {currentStep === 'pages' && document && (
+          <PageSelector
+            document={document}
+            onSelectFrontPage={(idx) =>
+              setDocument({
+                ...document,
+                front: { ...document.front, pageIndex: idx },
+              })
+            }
+            onSelectBackPage={(idx) => {
+              if (document.back) {
+                setDocument({
+                  ...document,
+                  back: { ...document.back, pageIndex: idx },
+                });
+              }
+            }}
+            onToggleHasBackSide={(hasBack) => {
+              setDocument({
+                ...document,
+                hasBackSide: hasBack,
+                back: hasBack
+                  ? {
+                      pageIndex: document.pageCount > 1 ? 1 : 0,
+                      cropBox: { x: 0.52, y: 0.62, width: 0.44, height: 0.34 },
+                      rotation: 0,
+                      adjustments: {
+                        brightness: 0,
+                        contrast: 0,
+                        saturation: 0,
+                        sharpen: 'none',
+                        grayscale: false,
+                      },
+                    }
+                  : undefined,
+              });
+            }}
+            onRotatePage={(idx) => {
+              const pages = [...document.pages];
+              const curRot = pages[idx].rotation || 0;
+              pages[idx] = { ...pages[idx], rotation: (curRot + 90) % 360 };
+              setDocument({ ...document, pages });
+            }}
+            onAutoProcess={handleAutoProcess}
+            onProceedToCrop={() => setCurrentStep('crop')}
+          />
+        )}
+
+        {/* STEP 3: CROP STUDIO & ENHANCEMENT EDITOR */}
+        {currentStep === 'crop' && document && (
+          <Editor
+            document={document}
+            onUpdateDocument={setDocument}
+            onAutoProcess={handleAutoProcess}
+            onProceedToPrint={handleProceedToPrint}
+            onBackToPages={() => setCurrentStep('pages')}
+            onAddToast={addToast}
+          />
+        )}
+
+        {/* STEP 4: PRINT LAYOUT VIEW */}
+        {currentStep === 'print' && document && (
+          <div className="max-w-6xl mx-auto py-4 space-y-6">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentStep('crop')}
+                className="text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 px-4 py-2 rounded-xl transition-colors"
+              >
+                &larr; Back to Crop Studio
+              </button>
+
+              <button
+                onClick={handleProceedToExport}
+                className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-xl shadow-xs transition-colors"
+              >
+                Proceed to Export &amp; Save PDF &rarr;
+              </button>
+            </div>
+
+            <PrintSheetView
+              document={document}
+              printSettings={printSettings}
+              frontCardUrl={frontCardUrl}
+              backCardUrl={backCardUrl}
+              onUpdateSettings={handleUpdatePrintSettings}
+              onPrintNow={handlePrintNow}
+            />
+          </div>
+        )}
+
+        {/* STEP 5: FINAL EXPORT & DOWNLOAD HUB */}
+        {currentStep === 'export' && document && (
+          <ExportSection
+            document={document}
+            frontCardUrl={frontCardUrl}
+            backCardUrl={backCardUrl}
+            printSettings={printSettings}
+            onBackToEditor={() => setCurrentStep('crop')}
+            onStartNewDocument={handleClearWorkspace}
+            onPrintNow={handlePrintNow}
+          />
+        )}
+      </main>
+
+      {/* Footer */}
+      <Footer
+        onOpenPrivacy={() => setIsPrivacyOpen(true)}
+        onOpenHelp={() => setIsHelpOpen(true)}
+      />
+
+      {/* Toast Notification Container */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
+
+      {/* Password Unlock Modal */}
+      <PasswordModal
+        isOpen={isPasswordModalOpen}
+        errorMessage={passwordError}
+        fileName={pendingPdfData?.fileName || 'Document.pdf'}
+        onSubmit={handlePasswordSubmit}
+        onCancel={() => {
+          setIsPasswordModalOpen(false);
+          setPendingPdfData(null);
+          setPasswordError(null);
+        }}
+      />
+
+      {/* Operator Help & Guide Modal */}
+      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+
+      {/* Privacy & Security Modal */}
+      <PrivacyModal
+        isOpen={isPrivacyOpen}
+        onClose={() => setIsPrivacyOpen(false)}
+        onClearWorkspace={handleClearWorkspace}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        defaultDpi={defaultDpi}
+        onUpdateDefaultDpi={setDefaultDpi}
+        defaultPaperSize={defaultPaperSize}
+        onUpdateDefaultPaperSize={setDefaultPaperSize}
+        customTemplates={customTemplates}
+        onDeleteCustomTemplate={(id) => {
+          const updated = customTemplates.filter((t) => t.id !== id);
+          setCustomTemplates(updated);
+          localStorage.setItem('aazmi_custom_card_templates', JSON.stringify(updated));
+        }}
+      />
+
+      {/* DEDICATED NATIVE PRINT MOUNT ROOT (Only visible in Print Output) */}
+      <div id="print-mount-root">
+        {printCardItems.length > 0 && (
+          <div
+            className="print-sheet"
+            style={{
+              width: `${pageWidthMm}mm`,
+              height: `${pageHeightMm}mm`,
+              paddingTop: `${printSettings.marginsMm.top}mm`,
+              paddingBottom: `${printSettings.marginsMm.bottom}mm`,
+              paddingLeft: `${printSettings.marginsMm.left}mm`,
+              paddingRight: `${printSettings.marginsMm.right}mm`,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignContent: 'flex-start',
+              gap: `${printSettings.spacingMm.vertical}mm ${printSettings.spacingMm.horizontal}mm`,
+            }}
+          >
+            {printCardItems.map((item, idx) => (
+              <div
+                key={item.id}
+                className="print-card-wrapper"
+                style={{
+                  width: `${cardW}mm`,
+                  height: `${cardH}mm`,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  border: printSettings.showCardBorder ? '0.2mm solid #cbd5e1' : 'none',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <img
+                  src={item.url}
+                  alt={`${item.type} side ${idx + 1}`}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: 'block',
+                  }}
+                />
+
+                {/* Print Corner Cut Marks */}
+                {printSettings.showCutGuides && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '3mm',
+                        height: '3mm',
+                        borderTop: '0.25mm solid #64748b',
+                        borderLeft: '0.25mm solid #64748b',
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        right: 0,
+                        width: '3mm',
+                        height: '3mm',
+                        borderTop: '0.25mm solid #64748b',
+                        borderRight: '0.25mm solid #64748b',
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        width: '3mm',
+                        height: '3mm',
+                        borderBottom: '0.25mm solid #64748b',
+                        borderLeft: '0.25mm solid #64748b',
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        right: 0,
+                        width: '3mm',
+                        height: '3mm',
+                        borderBottom: '0.25mm solid #64748b',
+                        borderRight: '0.25mm solid #64748b',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default App;
