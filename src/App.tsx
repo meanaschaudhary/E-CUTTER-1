@@ -7,6 +7,7 @@ import {
   CardTemplate,
   PaperSize,
   PAPER_DIMENSIONS_MM,
+  OFFICIAL_TEMPLATES,
 } from './types';
 import { Navbar } from './components/Navbar';
 import { WorkflowBar } from './components/WorkflowBar';
@@ -23,12 +24,20 @@ import { Footer } from './components/Footer';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { loadPdfDocument, loadImageDocument } from './utils/pdfEngine';
 import { renderCroppedCard, autoProcessFullDocument } from './utils/imageEngine';
-import { generateSampleAadhaarDoc, generateSamplePanDoc } from './utils/sampleGenerator';
 
 export const App: React.FC = () => {
   // Main Application State
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
   const [document, setDocument] = useState<UploadedDocument | null>(null);
+
+  // Card Selection First State
+  const [selectedCardTemplate, setSelectedCardTemplate] = useState<CardTemplate>(OFFICIAL_TEMPLATES[0]);
+  const [customWidthMm, setCustomWidthMm] = useState<number>(86.0);
+  const [customHeightMm, setCustomHeightMm] = useState<number>(54.0);
+
+  // Uploading / Decoding Progress State
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<{ percent: number; status: string } | null>(null);
 
   // Modal States
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -75,134 +84,214 @@ export const App: React.FC = () => {
     setPrintSettings((prev) => ({ ...prev, ...newSettings }));
   };
 
-  // Helper to build an UploadedDocument from PDF load result
+  // Helper to build an UploadedDocument from PDF load result using selected card template
   const buildDocFromPdf = (
     res: import('./utils/pdfEngine').PdfLoadResult,
     fileName: string,
-    fileSize: number
-  ): UploadedDocument => ({
-    id: `doc_${Date.now()}`,
-    fileName,
-    fileSize,
-    fileType: 'pdf',
-    pageCount: res.pageCount,
-    isPasswordProtected: res.isPasswordProtected,
-    pages: res.pages,
-    activeSide: 'front',
-    hasBackSide: res.pageCount > 1,
-    selectedTemplateId: 'aadhaar-pvc',
-    targetWidthMm: 86.0,
-    targetHeightMm: 54.0,
-    unit: 'mm',
-    targetDpi: defaultDpi,
-    front: {
-      pageIndex: 0,
-      cropBox: { x: 0.08, y: 0.62, width: 0.42, height: 0.32 },
-      rotation: 0,
-      adjustments: {
-        brightness: 0,
-        contrast: 0,
-        saturation: 0,
-        sharpen: 'none',
-        grayscale: false,
+    fileSize: number,
+    template: CardTemplate,
+    customW: number,
+    customH: number
+  ): UploadedDocument => {
+    const isCustom = template.id === 'custom-card' || template.id === 'other-gov-card';
+    const targetW = isCustom ? customW : template.widthMm;
+    const targetH = isCustom ? customH : template.heightMm;
+    const isAadhaarLike = template.id.includes('aadhaar');
+
+    return {
+      id: `doc_${Date.now()}`,
+      fileName,
+      fileSize,
+      fileType: 'pdf',
+      pageCount: res.pageCount,
+      isPasswordProtected: res.isPasswordProtected,
+      pages: res.pages,
+      activeSide: 'front',
+      hasBackSide: isAadhaarLike || res.pageCount > 1,
+      selectedTemplateId: template.id,
+      targetWidthMm: targetW,
+      targetHeightMm: targetH,
+      unit: 'mm',
+      targetDpi: defaultDpi,
+      front: {
+        pageIndex: 0,
+        cropBox: isAadhaarLike
+          ? { x: 0.08, y: 0.60, width: 0.42, height: 0.33 }
+          : { x: 0.08, y: 0.15, width: 0.84, height: 0.70 },
+        rotation: 0,
+        adjustments: {
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          sharpen: 'none',
+          grayscale: false,
+        },
+        aspectRatioMode: template.isCR80 ? 'cr80' : 'custom',
+        customRatioWidth: targetW,
+        customRatioHeight: targetH,
       },
-      aspectRatioMode: 'cr80',
-    },
-    back:
-      res.pageCount > 1
-        ? {
-            pageIndex: 1,
-            cropBox: { x: 0.08, y: 0.62, width: 0.42, height: 0.32 },
-            rotation: 0,
-            adjustments: {
-              brightness: 0,
-              contrast: 0,
-              saturation: 0,
-              sharpen: 'none',
-              grayscale: false,
-            },
-            aspectRatioMode: 'cr80',
-          }
-        : null,
-  });
+      back:
+        isAadhaarLike || res.pageCount > 1
+          ? {
+              pageIndex: res.pageCount > 1 ? 1 : 0,
+              cropBox: isAadhaarLike && res.pageCount === 1
+                ? { x: 0.52, y: 0.60, width: 0.42, height: 0.33 }
+                : { x: 0.08, y: 0.15, width: 0.84, height: 0.70 },
+              rotation: 0,
+              adjustments: {
+                brightness: 0,
+                contrast: 0,
+                saturation: 0,
+                sharpen: 'none',
+                grayscale: false,
+              },
+              aspectRatioMode: template.isCR80 ? 'cr80' : 'custom',
+              customRatioWidth: targetW,
+              customRatioHeight: targetH,
+            }
+          : null,
+    };
+  };
+
+  // Helper to build an UploadedDocument from Image load result
+  const buildDocFromImage = (
+    page: import('./types').DocumentPage,
+    fileName: string,
+    fileSize: number,
+    template: CardTemplate,
+    customW: number,
+    customH: number
+  ): UploadedDocument => {
+    const isCustom = template.id === 'custom-card' || template.id === 'other-gov-card';
+    const targetW = isCustom ? customW : template.widthMm;
+    const targetH = isCustom ? customH : template.heightMm;
+
+    return {
+      id: `doc_${Date.now()}`,
+      fileName,
+      fileSize,
+      fileType: 'image',
+      pageCount: 1,
+      isPasswordProtected: false,
+      pages: [page],
+      activeSide: 'front',
+      hasBackSide: false,
+      selectedTemplateId: template.id,
+      targetWidthMm: targetW,
+      targetHeightMm: targetH,
+      unit: 'mm',
+      targetDpi: defaultDpi,
+      front: {
+        pageIndex: 0,
+        cropBox: { x: 0.05, y: 0.05, width: 0.90, height: 0.90 },
+        rotation: 0,
+        adjustments: {
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          sharpen: 'none',
+          grayscale: false,
+        },
+        aspectRatioMode: template.isCR80 ? 'cr80' : 'custom',
+        customRatioWidth: targetW,
+        customRatioHeight: targetH,
+      },
+      back: null,
+    };
+  };
 
   // 1. Process Uploaded File
   const handleFileUpload = async (file: File) => {
+    setIsUploading(true);
+    setUploadProgress({ percent: 15, status: 'Reading document file...' });
+
     try {
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         const arrayBuffer = await file.arrayBuffer();
         setPendingPdfData({ fileData: arrayBuffer, fileName: file.name });
 
-        const res = await loadPdfDocument(arrayBuffer);
+        const res = await loadPdfDocument(
+          arrayBuffer,
+          undefined,
+          (percent, status) => setUploadProgress({ percent, status })
+        );
+
         if (res.isPasswordProtected) {
           setIsPasswordModalOpen(true);
           setPasswordError(null);
+          setIsUploading(false);
+          setUploadProgress(null);
           return;
         }
 
-        const doc = buildDocFromPdf(res, file.name, file.size);
+        const doc = buildDocFromPdf(
+          res,
+          file.name,
+          file.size,
+          selectedCardTemplate,
+          customWidthMm,
+          customHeightMm
+        );
         setDocument(doc);
         setCurrentStep(doc.pageCount > 1 ? 'pages' : 'crop');
-        addToast(`PDF "${file.name}" loaded successfully (${doc.pageCount} pages)`, 'success');
+        addToast(
+          `PDF "${file.name}" loaded (${doc.pageCount} page${doc.pageCount > 1 ? 's' : ''}) for ${selectedCardTemplate.name}`,
+          'success'
+        );
       } else {
-        const page = await loadImageDocument(file);
-        const doc: UploadedDocument = {
-          id: `doc_${Date.now()}`,
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: 'image',
-          pageCount: 1,
-          isPasswordProtected: false,
-          pages: [page],
-          activeSide: 'front',
-          hasBackSide: false,
-          selectedTemplateId: 'aadhaar-pvc',
-          targetWidthMm: 86.0,
-          targetHeightMm: 54.0,
-          unit: 'mm',
-          targetDpi: defaultDpi,
-          front: {
-            pageIndex: 0,
-            cropBox: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
-            rotation: 0,
-            adjustments: {
-              brightness: 0,
-              contrast: 0,
-              saturation: 0,
-              sharpen: 'none',
-              grayscale: false,
-            },
-            aspectRatioMode: 'cr80',
-          },
-          back: null,
-        };
+        const page = await loadImageDocument(
+          file,
+          (percent, status) => setUploadProgress({ percent, status })
+        );
+        const doc = buildDocFromImage(
+          page,
+          file.name,
+          file.size,
+          selectedCardTemplate,
+          customWidthMm,
+          customHeightMm
+        );
         setDocument(doc);
         setCurrentStep('crop');
-        addToast(`Image "${file.name}" loaded successfully`, 'success');
+        addToast(
+          `Image "${file.name}" loaded for ${selectedCardTemplate.name}`,
+          'success'
+        );
       }
     } catch (err: any) {
       console.error('File load error:', err);
-      if (err.name === 'PasswordException' || err.message?.includes('password')) {
+      const msg = err?.message || 'Error loading file';
+      if (msg.toLowerCase().includes('password')) {
         setIsPasswordModalOpen(true);
         setPasswordError('This PDF is password protected. Enter password to continue.');
       } else {
-        addToast('Error loading file. Ensure it is a valid PDF or image.', 'error');
+        addToast(`Failed to load file: ${msg}`, 'error');
       }
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
   // 2. Submit Password for PDF
   const handlePasswordSubmit = async (password: string) => {
     if (!pendingPdfData) return;
+    setIsUploading(true);
+    setUploadProgress({ percent: 30, status: 'Decrypting PDF...' });
+
     try {
       const res = await loadPdfDocument(
         pendingPdfData.fileData,
-        password
+        password,
+        (percent, status) => setUploadProgress({ percent, status })
       );
       const doc = buildDocFromPdf(
         res,
         pendingPdfData.fileName,
-        pendingPdfData.fileData.byteLength
+        pendingPdfData.fileData.byteLength,
+        selectedCardTemplate,
+        customWidthMm,
+        customHeightMm
       );
       setDocument(doc);
       setIsPasswordModalOpen(false);
@@ -210,30 +299,15 @@ export const App: React.FC = () => {
       setPendingPdfData(null);
       setCurrentStep(doc.pageCount > 1 ? 'pages' : 'crop');
       addToast('PDF decrypted and loaded successfully', 'success');
-    } catch (err) {
-      setPasswordError('Incorrect PDF password. Please try again.');
+    } catch (err: any) {
+      setPasswordError(err?.message || 'Incorrect PDF password. Please try again.');
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(null);
     }
   };
 
-  // 3. Load Sample Mock Documents
-  const handleLoadSample = async (type: 'aadhaar' | 'pan') => {
-    try {
-      addToast(`Generating sample ${type === 'aadhaar' ? 'Aadhaar Card' : 'PAN Card'}...`, 'info');
-      const doc =
-        type === 'aadhaar'
-          ? await generateSampleAadhaarDoc()
-          : await generateSamplePanDoc();
-
-      setDocument(doc);
-      setCurrentStep('crop');
-      addToast(`Sample ${type.toUpperCase()} loaded! Ready to test crop & print.`, 'success');
-    } catch (err) {
-      console.error(err);
-      addToast('Error generating sample document.', 'error');
-    }
-  };
-
-  // 4. Auto Process Entire Document
+  // 3. Auto Process Entire Document
   const handleAutoProcess = async () => {
     if (!document) return;
     try {
@@ -248,7 +322,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 5. Render Cropped Cards to High-Res Data URLs
+  // 4. Render Cropped Cards to High-Res Data URLs
   const rasterizeCroppedCards = useCallback(async (docToRasterize: UploadedDocument) => {
     setIsProcessingCards(true);
     try {
@@ -309,7 +383,6 @@ export const App: React.FC = () => {
     if (!frontCardUrl) {
       await rasterizeCroppedCards(document);
     }
-    // Allow React to flush the DOM to #print-mount-root
     setTimeout(() => {
       window.print();
     }, 150);
@@ -366,8 +439,8 @@ export const App: React.FC = () => {
     printSettings.orientation === 'portrait'
       ? baseDimensions.height
       : baseDimensions.width;
-  const cardW = document?.targetWidthMm || 86;
-  const cardH = document?.targetHeightMm || 54;
+  const cardW = document?.targetWidthMm || (selectedCardTemplate.id === 'custom-card' ? customWidthMm : selectedCardTemplate.widthMm);
+  const cardH = document?.targetHeightMm || (selectedCardTemplate.id === 'custom-card' ? customHeightMm : selectedCardTemplate.heightMm);
 
   const printCardItems: Array<{ type: 'front' | 'back'; url: string; id: string }> = [];
   for (let c = 0; c < printSettings.copies; c++) {
@@ -385,7 +458,7 @@ export const App: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,application/pdf,image/png,image/jpeg,image/jpg"
+        accept=".pdf,application/pdf,image/png,image/jpeg,image/jpg,image/webp"
         className="hidden"
         onChange={(e) => {
           if (e.target.files && e.target.files[0]) {
@@ -428,12 +501,20 @@ export const App: React.FC = () => {
 
       {/* Main Dynamic Workspace Body */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-6">
-        {/* STEP 1: UPLOAD SCREEN */}
+        {/* STEP 1: CARD SELECTION & UPLOAD SCREEN */}
         {currentStep === 'upload' && (
           <FileUploader
+            selectedTemplate={selectedCardTemplate}
+            onSelectTemplate={setSelectedCardTemplate}
+            customWidthMm={customWidthMm}
+            customHeightMm={customHeightMm}
+            onUpdateCustomDimensions={(w, h) => {
+              setCustomWidthMm(w);
+              setCustomHeightMm(h);
+            }}
             onFileUpload={handleFileUpload}
-            onLoadSampleAadhaar={() => handleLoadSample('aadhaar')}
-            onLoadSamplePan={() => handleLoadSample('pan')}
+            isUploading={isUploading}
+            uploadProgress={uploadProgress}
           />
         )}
 
@@ -462,7 +543,7 @@ export const App: React.FC = () => {
                 back: hasBack
                   ? {
                       pageIndex: document.pageCount > 1 ? 1 : 0,
-                      cropBox: { x: 0.52, y: 0.62, width: 0.44, height: 0.34 },
+                      cropBox: { x: 0.52, y: 0.60, width: 0.42, height: 0.33 },
                       rotation: 0,
                       adjustments: {
                         brightness: 0,
@@ -471,8 +552,11 @@ export const App: React.FC = () => {
                         sharpen: 'none',
                         grayscale: false,
                       },
+                      aspectRatioMode: document.front.aspectRatioMode,
+                      customRatioWidth: document.targetWidthMm,
+                      customRatioHeight: document.targetHeightMm,
                     }
-                  : undefined,
+                  : null,
               });
             }}
             onRotatePage={(idx) => {
@@ -504,14 +588,14 @@ export const App: React.FC = () => {
             <div className="flex items-center justify-between">
               <button
                 onClick={() => setCurrentStep('crop')}
-                className="text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 px-4 py-2 rounded-xl transition-colors"
+                className="text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 px-4 py-2 rounded-xl transition-colors cursor-pointer"
               >
                 &larr; Back to Crop Studio
               </button>
 
               <button
                 onClick={handleProceedToExport}
-                className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-xl shadow-xs transition-colors"
+                className="text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 active:bg-blue-900 px-5 py-2 rounded-lg shadow-2xs transition-colors cursor-pointer"
               >
                 Proceed to Export &amp; Save PDF &rarr;
               </button>

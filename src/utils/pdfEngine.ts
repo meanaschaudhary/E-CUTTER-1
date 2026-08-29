@@ -1,11 +1,11 @@
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { DocumentPage } from '../types';
 
-// Set up worker source
+// Set up worker source reliably via local Vite asset bundle
 if (typeof window !== 'undefined') {
   try {
-    // Use worker from unpkg/cdnjs or pdfjs version
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '3.11.174'}/pdf.worker.min.js`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
   } catch (err) {
     console.warn('PDF.js worker initialization error fallback:', err);
   }
@@ -28,14 +28,15 @@ export async function loadPdfDocument(
   const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(fileBuffer),
     password: password || undefined,
-    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+    cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
     cMapPacked: true,
+    standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
   });
 
   if (onProgress) {
     loadingTask.onProgress = ({ loaded, total }) => {
       if (total > 0) {
-        const pct = Math.round((loaded / total) * 40);
+        const pct = Math.round((loaded / total) * 30);
         onProgress(pct, `Loading PDF document... ${pct}%`);
       }
     };
@@ -45,18 +46,25 @@ export async function loadPdfDocument(
   try {
     pdfDoc = await loadingTask.promise;
   } catch (error: any) {
-    if (
+    const isPasswordErr =
       error.name === 'PasswordException' ||
+      error.name === 'NeedPasswordException' ||
+      error.name === 'InvalidPasswordException' ||
       error.message?.toLowerCase().includes('password') ||
-      error.code === 1
-    ) {
+      error.code === 1 ||
+      error.code === 2;
+
+    if (isPasswordErr) {
+      if (password) {
+        throw new Error('Incorrect PDF password. Please try again.');
+      }
       return {
         pages: [],
         isPasswordProtected: true,
         pageCount: 0,
       };
     }
-    throw error;
+    throw new Error(error.message || 'Failed to parse PDF document.');
   }
 
   const numPages = pdfDoc.numPages;
@@ -64,14 +72,20 @@ export async function loadPdfDocument(
 
   for (let i = 1; i <= numPages; i++) {
     if (onProgress) {
-      const pagePct = 40 + Math.round(((i - 1) / numPages) * 55);
+      const pagePct = 30 + Math.round(((i - 1) / numPages) * 65);
       onProgress(pagePct, `Rendering high-res page ${i} of ${numPages}...`);
     }
 
     const page = await pdfDoc.getPage(i);
-    // Render at scale 2.5 to 3.0 for crisp vector detail preservation
-    const desiredScale = 2.5;
-    const viewport = page.getViewport({ scale: desiredScale });
+    // Render at 2.5x scale for razor-sharp vector text and QR codes
+    let desiredScale = 2.5;
+    let viewport = page.getViewport({ scale: desiredScale });
+
+    // Limit maximum canvas dimension to 4096px for browser safety
+    if (viewport.width > 4096 || viewport.height > 4096) {
+      desiredScale = 4096 / Math.max(viewport.width / desiredScale, viewport.height / desiredScale);
+      viewport = page.getViewport({ scale: desiredScale });
+    }
 
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -82,19 +96,17 @@ export async function loadPdfDocument(
       throw new Error('Canvas 2D context creation failed');
     }
 
-    // Fill white background
+    // Fill clean white background
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, canvas.width, canvas.height);
 
-    const renderContext: any = {
+    await page.render({
       canvasContext: context,
       viewport: viewport,
       canvas: canvas,
-    };
+    }).promise;
 
-    await page.render(renderContext).promise;
-
-    const dataUrl = canvas.toDataURL('image/png', 1.0);
+    const dataUrl = canvas.toDataURL('image/png', 0.95);
     pages.push({
       pageNumber: i,
       dataUrl,
@@ -126,24 +138,36 @@ export async function loadImageDocument(
   if (onProgress) onProgress(30, 'Reading image file...');
 
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        if (onProgress) onProgress(100, 'Image loaded successfully');
-        resolve({
-          pageNumber: 1,
-          dataUrl: img.src,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-          aspectRatio: img.naturalWidth / img.naturalHeight,
-          rotation: 0,
-        });
-      };
-      img.onerror = () => reject(new Error('Failed to decode image data'));
-      img.src = e.target?.result as string;
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      if (onProgress) onProgress(100, 'Image loaded successfully');
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+      }
+      const dataUrl = canvas.toDataURL('image/png', 0.95);
+      URL.revokeObjectURL(objectUrl);
+
+      resolve({
+        pageNumber: 1,
+        dataUrl,
+        width: canvas.width,
+        height: canvas.height,
+        aspectRatio: canvas.width / canvas.height,
+        rotation: 0,
+      });
     };
-    reader.onerror = () => reject(new Error('Failed to read image file'));
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Failed to decode image file. Please ensure it is a valid JPG, PNG, or WebP image.'));
+    };
+    img.src = objectUrl;
   });
 }
