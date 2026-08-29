@@ -498,11 +498,6 @@ export const PrintSheetView: React.FC<PrintSheetViewProps> = ({
                       <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-gray-400" />
                     </div>
                   )}
-
-                  {/* Label badge */}
-                  <span className="absolute bottom-1 right-1 bg-gray-900/80 text-white text-[8px] font-bold px-1 rounded uppercase">
-                    {item.type} #{Math.floor(idx / 2) + 1}
-                  </span>
                 </div>
               ))}
             </div>

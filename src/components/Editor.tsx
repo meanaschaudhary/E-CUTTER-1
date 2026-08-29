@@ -8,6 +8,8 @@ import {
   Printer,
   ChevronRight,
   FileCheck,
+  CheckCircle2,
+  Plus,
 } from 'lucide-react';
 import {
   AspectRatioMode,
@@ -272,19 +274,18 @@ export const Editor: React.FC<EditorProps> = ({
   // Toggle Has Back Side
   const handleToggleHasBackSide = (hasBack: boolean) => {
     if (hasBack) {
-      // Create back side default from page 2 if exists or page 1
+      // Create back side default from page 2 if exists, or page 1
       const backPageIndex = doc.pageCount > 1 ? 1 : 0;
+      const isAadhaarLike = doc.selectedTemplateId.includes('aadhaar');
+
       onUpdateDocument({
         ...doc,
         hasBackSide: true,
         back: {
           pageIndex: backPageIndex,
-          cropBox: {
-            x: 0.52,
-            y: 0.62,
-            width: 0.44,
-            height: 0.34,
-          },
+          cropBox: isAadhaarLike && backPageIndex === 0
+            ? { x: 0.52, y: 0.60, width: 0.42, height: 0.33 }
+            : { x: 0.08, y: 0.15, width: 0.84, height: 0.70 },
           rotation: 0,
           adjustments: {
             brightness: 0,
@@ -293,17 +294,37 @@ export const Editor: React.FC<EditorProps> = ({
             sharpen: 'none',
             grayscale: false,
           },
+          aspectRatioMode: doc.front.aspectRatioMode,
+          customRatioWidth: doc.targetWidthMm,
+          customRatioHeight: doc.targetHeightMm,
         },
       });
       setActiveSide('back');
-      onAddToast('Back side added. Position crop box for the reverse side.', 'info');
+      onAddToast('Back side enabled. Position crop box for reverse side of card.', 'info');
     } else {
       onUpdateDocument({
         ...doc,
         hasBackSide: false,
       });
       setActiveSide('front');
-      onAddToast('Back side removed', 'info');
+      onAddToast('Back side disabled. Printing front side only.', 'info');
+    }
+  };
+
+  // Select page index for a specific side (front or back)
+  const handleSelectPageIndexForSide = (side: 'front' | 'back', pageIndex: number) => {
+    if (side === 'front') {
+      onUpdateDocument({
+        ...doc,
+        front: { ...doc.front, pageIndex },
+      });
+      onAddToast(`Front side set to Page ${pageIndex + 1}`, 'info');
+    } else if (doc.back) {
+      onUpdateDocument({
+        ...doc,
+        back: { ...doc.back, pageIndex },
+      });
+      onAddToast(`Back side set to Page ${pageIndex + 1}`, 'info');
     }
   };
 
@@ -321,58 +342,101 @@ export const Editor: React.FC<EditorProps> = ({
     onAddToast('Front and Back side assignments swapped', 'success');
   };
 
+  // Handler for "Next: Crop Back Side from Same PDF"
+  const handleProceedToBackSide = () => {
+    if (!doc.hasBackSide || !doc.back) {
+      handleToggleHasBackSide(true);
+    } else {
+      setActiveSide('back');
+    }
+    onAddToast('Now cropping BACK SIDE from same document.', 'info');
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-4">
-      {/* Top Workflow Action Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          {doc.pageCount > 1 && (
-            <button
-              onClick={onBackToPages}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 shadow-2xs transition-colors"
+      {/* Top Workflow Action Bar with Step Title & Direct Flow Actions */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-6 h-6 rounded-full text-white flex items-center justify-center text-xs font-bold ${
+                activeSide === 'front' ? 'bg-blue-700' : 'bg-emerald-600'
+              }`}
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to Pages</span>
-            </button>
-          )}
-          <span className="text-xs font-bold text-gray-900 truncate max-w-xs">
-            {doc.fileName}
-          </span>
-          <span className="text-[11px] font-mono bg-gray-200 text-gray-700 px-2 py-0.5 rounded">
-            P{currentPageIndex + 1}/{doc.pageCount}
-          </span>
+              {activeSide === 'front' ? '1' : '2'}
+            </span>
+            <h2 className="text-base font-bold text-gray-900">
+              {activeSide === 'front' ? 'Crop Front Side' : 'Crop Back Side from Same Document'}
+            </h2>
+            <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+              {doc.targetWidthMm} × {doc.targetHeightMm} mm
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1 pl-8">
+            {activeSide === 'front'
+              ? 'First crop the FRONT side card boundary, then click next to crop the BACK side.'
+              : 'Now position the crop frame over the BACK side of the card, then proceed to Print.'}
+          </p>
         </div>
 
         {/* Global Action Buttons */}
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
-          <button
-            id="btn-editor-auto-process"
-            onClick={onAutoProcess}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors shadow-2xs"
-            title="Auto identify front/back & optimal crop"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-            <span>Auto Process</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          {activeSide === 'front' ? (
+            <>
+              <button
+                id="btn-print-front-only"
+                type="button"
+                onClick={onProceedToPrint}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
+                title="Skip back side and print front only"
+              >
+                <Printer className="w-3.5 h-3.5 text-gray-600" />
+                <span>Print Front Only</span>
+              </button>
 
-          <button
-            id="btn-proceed-print"
-            onClick={onProceedToPrint}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-white bg-blue-700 hover:bg-blue-800 shadow-md shadow-blue-500/20 transition-all"
-          >
-            <span>Proceed to Print &amp; Export</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+              <button
+                id="btn-next-crop-back"
+                type="button"
+                onClick={handleProceedToBackSide}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 active:bg-blue-900 shadow-sm transition-all cursor-pointer"
+              >
+                <span>Next: Crop Back Side &rarr;</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                id="btn-back-to-front"
+                type="button"
+                onClick={() => setActiveSide('front')}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>&larr; Back to Front</span>
+              </button>
+
+              <button
+                id="btn-proceed-print"
+                type="button"
+                onClick={onProceedToPrint}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 shadow-sm transition-all cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Done: Proceed to Print &rarr;</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Front / Back Switcher Tabs */}
+      {/* Front / Back Switcher Tabs & Page Selector */}
       <FrontBackTabs
         document={doc}
         activeSide={activeSide}
         onSelectSide={setActiveSide}
         onToggleHasBackSide={handleToggleHasBackSide}
         onSwapSides={handleSwapSides}
+        onSelectPageIndexForSide={handleSelectPageIndexForSide}
       />
 
       {/* Main Studio Grid: Left Canvas Area (7 cols) + Right Controls Area (5 cols) */}

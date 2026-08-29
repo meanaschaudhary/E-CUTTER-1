@@ -1,12 +1,13 @@
 import React from 'react';
-import { Upload, Layers, Crop, Printer, Check } from 'lucide-react';
+import { Upload, Crop, Layers, Printer, Check } from 'lucide-react';
 
-export type WorkflowStep = 'upload' | 'select' | 'crop' | 'export';
+export type WorkflowStep = 'upload' | 'crop-front' | 'crop-back' | 'export';
 
 interface WorkflowBarProps {
   currentStep: WorkflowStep;
   onStepClick: (step: WorkflowStep) => void;
   hasDocument: boolean;
+  hasBackSide: boolean;
   hasCropped: boolean;
 }
 
@@ -14,6 +15,7 @@ export const WorkflowBar: React.FC<WorkflowBarProps> = ({
   currentStep,
   onStepClick,
   hasDocument,
+  hasBackSide,
   hasCropped,
 }) => {
   const steps: Array<{
@@ -27,34 +29,34 @@ export const WorkflowBar: React.FC<WorkflowBarProps> = ({
     {
       id: 'upload',
       num: '01',
-      label: 'Upload',
+      label: 'Upload Document',
       subtitle: 'PDF or Image',
       icon: Upload,
       enabled: true,
     },
     {
-      id: 'select',
+      id: 'crop-front',
       num: '02',
-      label: 'Select',
-      subtitle: 'Front & Back Pages',
-      icon: Layers,
+      label: '1. Crop Front Size',
+      subtitle: 'Position Front Card',
+      icon: Crop,
       enabled: hasDocument,
     },
     {
-      id: 'crop',
+      id: 'crop-back',
       num: '03',
-      label: 'Crop',
-      subtitle: 'Auto Detect & Size',
-      icon: Crop,
+      label: '2. Crop Back Size',
+      subtitle: 'Same PDF / Page',
+      icon: Layers,
       enabled: hasDocument,
     },
     {
       id: 'export',
       num: '04',
-      label: 'Export & Print',
-      subtitle: 'A4 Layout & High-Res PDF',
+      label: '3. Print & Export',
+      subtitle: '100% Actual Scale',
       icon: Printer,
-      enabled: hasDocument && hasCropped,
+      enabled: hasDocument,
     },
   ];
 
@@ -66,18 +68,19 @@ export const WorkflowBar: React.FC<WorkflowBarProps> = ({
           const isActive = currentStep === step.id;
           const isCompleted =
             (step.id === 'upload' && hasDocument) ||
-            (step.id === 'select' && hasDocument && currentStep !== 'upload') ||
-            (step.id === 'crop' && hasCropped && currentStep === 'export');
+            (step.id === 'crop-front' && (currentStep === 'crop-back' || currentStep === 'export')) ||
+            (step.id === 'crop-back' && currentStep === 'export' && hasBackSide);
 
           return (
             <React.Fragment key={step.id}>
               <button
                 id={`step-button-${step.id}`}
                 disabled={!step.enabled}
+                type="button"
                 onClick={() => onStepClick(step.id)}
-                className={`flex items-center gap-3 px-3.5 py-2 rounded-xl text-left transition-all ${
+                className={`flex items-center gap-3 px-3.5 py-2 rounded-xl text-left transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-blue-50 text-blue-700 font-bold'
+                    ? 'bg-blue-50 text-blue-700 font-bold ring-1 ring-blue-700/20'
                     : isCompleted
                     ? 'text-gray-800 hover:bg-gray-50'
                     : step.enabled

@@ -233,7 +233,7 @@ export const App: React.FC = () => {
           customHeightMm
         );
         setDocument(doc);
-        setCurrentStep(doc.pageCount > 1 ? 'pages' : 'crop');
+        setCurrentStep('crop');
         addToast(
           `PDF "${file.name}" loaded (${doc.pageCount} page${doc.pageCount > 1 ? 's' : ''}) for ${selectedCardTemplate.name}`,
           'success'
@@ -297,7 +297,7 @@ export const App: React.FC = () => {
       setIsPasswordModalOpen(false);
       setPasswordError(null);
       setPendingPdfData(null);
-      setCurrentStep(doc.pageCount > 1 ? 'pages' : 'crop');
+      setCurrentStep('crop');
       addToast('PDF decrypted and loaded successfully', 'success');
     } catch (err: any) {
       setPasswordError(err?.message || 'Incorrect PDF password. Please try again.');
@@ -480,22 +480,60 @@ export const App: React.FC = () => {
       {/* 4-Step Interactive Workflow Indicator */}
       <WorkflowBar
         currentStep={
-          currentStep === 'pages'
-            ? 'select'
-            : currentStep === 'print' || currentStep === 'export'
-            ? 'export'
-            : currentStep
+          currentStep === 'upload'
+            ? 'upload'
+            : currentStep === 'crop' || currentStep === 'pages'
+            ? document?.activeSide === 'back'
+              ? 'crop-back'
+              : 'crop-front'
+            : 'export'
         }
         onStepClick={(step) => {
-          if (step === 'select') {
-            setCurrentStep('pages');
+          if (step === 'upload') {
+            handleClearWorkspace();
+          } else if (step === 'crop-front') {
+            if (document) {
+              setDocument({ ...document, activeSide: 'front' });
+              setCurrentStep('crop');
+            }
+          } else if (step === 'crop-back') {
+            if (document) {
+              if (!document.hasBackSide || !document.back) {
+                const backPageIndex = document.pageCount > 1 ? 1 : 0;
+                const isAadhaarLike = document.selectedTemplateId.includes('aadhaar');
+                setDocument({
+                  ...document,
+                  hasBackSide: true,
+                  activeSide: 'back',
+                  back: {
+                    pageIndex: backPageIndex,
+                    cropBox: isAadhaarLike && backPageIndex === 0
+                      ? { x: 0.52, y: 0.60, width: 0.42, height: 0.33 }
+                      : { x: 0.08, y: 0.15, width: 0.84, height: 0.70 },
+                    rotation: 0,
+                    adjustments: {
+                      brightness: 0,
+                      contrast: 0,
+                      saturation: 0,
+                      sharpen: 'none',
+                      grayscale: false,
+                    },
+                    aspectRatioMode: document.front.aspectRatioMode,
+                    customRatioWidth: document.targetWidthMm,
+                    customRatioHeight: document.targetHeightMm,
+                  },
+                });
+              } else {
+                setDocument({ ...document, activeSide: 'back' });
+              }
+              setCurrentStep('crop');
+            }
           } else if (step === 'export') {
             handleProceedToPrint();
-          } else {
-            setCurrentStep(step);
           }
         }}
         hasDocument={!!document}
+        hasBackSide={!!document?.hasBackSide}
         hasCropped={!!frontCardUrl}
       />
 
@@ -681,7 +719,7 @@ export const App: React.FC = () => {
             className="print-sheet"
             style={{
               width: `${pageWidthMm}mm`,
-              height: `${pageHeightMm}mm`,
+              maxHeight: `${pageHeightMm}mm`,
               paddingTop: `${printSettings.marginsMm.top}mm`,
               paddingBottom: `${printSettings.marginsMm.bottom}mm`,
               paddingLeft: `${printSettings.marginsMm.left}mm`,
@@ -690,6 +728,12 @@ export const App: React.FC = () => {
               flexWrap: 'wrap',
               alignContent: 'flex-start',
               gap: `${printSettings.spacingMm.vertical}mm ${printSettings.spacingMm.horizontal}mm`,
+              boxSizing: 'border-box',
+              overflow: 'hidden',
+              pageBreakInside: 'avoid',
+              pageBreakAfter: 'avoid',
+              breakInside: 'avoid',
+              breakAfter: 'avoid',
             }}
           >
             {printCardItems.map((item, idx) => (

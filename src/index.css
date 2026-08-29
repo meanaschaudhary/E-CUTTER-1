@@ -20,42 +20,76 @@
   background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
 }
 
-/* Precise Document Print Styles */
+/* Precise Document Print Styles - Strict 1-Page Layout */
+#print-mount-root {
+  display: none;
+}
+
 @media print {
+  @page {
+    margin: 0mm !important;
+    size: auto;
+  }
+
   html, body {
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Hide everything except print sheet container */
-  body * {
-    visibility: hidden;
+  /* Completely eliminate all application chrome and UI containers from print document flow */
+  body > #root > div > *:not(#print-mount-root),
+  .no-print,
+  nav,
+  header,
+  main,
+  footer,
+  aside,
+  dialog {
+    display: none !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
   }
 
-  #print-mount-root, #print-mount-root * {
-    visibility: visible;
-  }
-
+  /* Mount print container strictly on page 1 without page breaks */
   #print-mount-root {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+    break-inside: avoid !important;
+    break-after: avoid !important;
+    break-before: avoid !important;
+    overflow: hidden !important;
   }
 
-  .no-print {
-    display: none !important;
+  .print-sheet {
+    page-break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-inside: avoid !important;
+    break-after: avoid !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
   }
 
-  @page {
-    margin: 0;
-    size: auto;
+  .print-card-wrapper {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
 
