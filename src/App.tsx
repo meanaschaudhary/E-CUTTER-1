@@ -453,7 +453,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7] text-[#1D1D1F] flex flex-col font-sans antialiased">
+    <div className="min-h-screen bg-[#F5F5F7] print:bg-white print:min-h-0 text-[#1D1D1F] flex flex-col font-sans antialiased">
       {/* Hidden File Input for Keyboard Shortcuts & Header */}
       <input
         ref={fileInputRef}
@@ -713,10 +713,10 @@ export const App: React.FC = () => {
       />
 
       {/* DEDICATED NATIVE PRINT MOUNT ROOT (Only visible in Print Output) */}
-      <div id="print-mount-root">
+      <div id="print-mount-root" className="bg-white">
         {printCardItems.length > 0 && (
           <div
-            className="print-sheet"
+            className="print-sheet bg-white"
             style={{
               width: `${pageWidthMm}mm`,
               maxHeight: `${pageHeightMm}mm`,
@@ -730,6 +730,7 @@ export const App: React.FC = () => {
               gap: `${printSettings.spacingMm.vertical}mm ${printSettings.spacingMm.horizontal}mm`,
               boxSizing: 'border-box',
               overflow: 'hidden',
+              backgroundColor: '#ffffff',
               pageBreakInside: 'avoid',
               pageBreakAfter: 'avoid',
               breakInside: 'avoid',
