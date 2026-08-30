@@ -20,6 +20,16 @@
   background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
 /* Precise Document Print Styles - Strict 1-Page Clean White Layout */
 #print-mount-root {
   display: none;

@@ -77,6 +77,12 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  // Touch tracking for pinch-to-zoom & mobile panning
+  const touchPinchRef = useRef<{
+    initialDist: number;
+    initialZoom: number;
+  } | null>(null);
+
   // Dragging crop box or handles
   const [activeHandle, setActiveHandle] = useState<DragHandle>(null);
   const dragStartRef = useRef<{
@@ -327,8 +333,8 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     return { renderX, renderY, renderW, renderH, width, height };
   };
 
-  // Determine which handle was clicked
-  const getHandleAt = (clientX: number, clientY: number): DragHandle => {
+  // Determine which handle was clicked or touched
+  const getHandleAt = (clientX: number, clientY: number, tolerance = 18): DragHandle => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
@@ -344,19 +350,19 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     const cropScreenW = cropBox.width * renderW;
     const cropScreenH = cropBox.height * renderH;
 
-    const hit = 18; // tolerance in px
+    const hit = tolerance; // tolerance in px (larger on touch)
 
-    // Check corners first
+    // Check corners first (highest priority)
     if (Math.abs(mx - cropScreenX) < hit && Math.abs(my - cropScreenY) < hit) return 'tl';
     if (Math.abs(mx - (cropScreenX + cropScreenW)) < hit && Math.abs(my - cropScreenY) < hit) return 'tr';
     if (Math.abs(mx - cropScreenX) < hit && Math.abs(my - (cropScreenY + cropScreenH)) < hit) return 'bl';
     if (Math.abs(mx - (cropScreenX + cropScreenW)) < hit && Math.abs(my - (cropScreenY + cropScreenH)) < hit) return 'br';
 
     // Check edges
-    if (Math.abs(my - cropScreenY) < hit && mx >= cropScreenX && mx <= cropScreenX + cropScreenW) return 'top';
-    if (Math.abs(my - (cropScreenY + cropScreenH)) < hit && mx >= cropScreenX && mx <= cropScreenX + cropScreenW) return 'bottom';
-    if (Math.abs(mx - cropScreenX) < hit && my >= cropScreenY && my <= cropScreenY + cropScreenH) return 'left';
-    if (Math.abs(mx - (cropScreenX + cropScreenW)) < hit && my >= cropScreenY && my <= cropScreenY + cropScreenH) return 'right';
+    if (Math.abs(my - cropScreenY) < hit && mx >= cropScreenX - hit && mx <= cropScreenX + cropScreenW + hit) return 'top';
+    if (Math.abs(my - (cropScreenY + cropScreenH)) < hit && mx >= cropScreenX - hit && mx <= cropScreenX + cropScreenW + hit) return 'bottom';
+    if (Math.abs(mx - cropScreenX) < hit && my >= cropScreenY - hit && my <= cropScreenY + cropScreenH + hit) return 'left';
+    if (Math.abs(mx - (cropScreenX + cropScreenW)) < hit && my >= cropScreenY - hit && my <= cropScreenY + cropScreenH + hit) return 'right';
 
     // Check inside
     if (
@@ -371,60 +377,14 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     return null;
   };
 
-  // Mouse & Pointer handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || e.altKey) {
-      // Middle click or Alt key for panning
-      setIsPanning(true);
-      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-      return;
-    }
-
-    const handle = getHandleAt(e.clientX, e.clientY);
-    if (handle) {
-      setActiveHandle(handle);
-      dragStartRef.current = {
-        clientX: e.clientX,
-        clientY: e.clientY,
-        initialCrop: { ...cropBox },
-      };
-    } else {
-      // Clicked outside -> pan the view
-      setIsPanning(true);
-      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPan({
-        x: e.clientX - panStartRef.current.x,
-        y: e.clientY - panStartRef.current.y,
-      });
-      return;
-    }
-
-    if (!activeHandle) {
-      // Update cursor
-      const handle = getHandleAt(e.clientX, e.clientY);
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      if (handle === 'inside') canvas.style.cursor = 'move';
-      else if (handle === 'tl' || handle === 'br') canvas.style.cursor = 'nwse-resize';
-      else if (handle === 'tr' || handle === 'bl') canvas.style.cursor = 'nesw-resize';
-      else if (handle === 'top' || handle === 'bottom') canvas.style.cursor = 'ns-resize';
-      else if (handle === 'left' || handle === 'right') canvas.style.cursor = 'ew-resize';
-      else canvas.style.cursor = 'default';
-      return;
-    }
-
+  // Helper to recalculate and dispatch crop changes
+  const applyCropDelta = (currentClientX: number, currentClientY: number) => {
     const dims = getRenderDimensions();
-    if (!dims) return;
+    if (!dims || !activeHandle) return;
 
     const { renderW, renderH } = dims;
-    const deltaX = (e.clientX - dragStartRef.current.clientX) / renderW;
-    const deltaY = (e.clientY - dragStartRef.current.clientY) / renderH;
+    const deltaX = (currentClientX - dragStartRef.current.clientX) / renderW;
+    const deltaY = (currentClientY - dragStartRef.current.clientY) / renderH;
     const init = dragStartRef.current.initialCrop;
 
     let newCrop = { ...init };
@@ -514,9 +474,125 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     onCropChange(newCrop);
   };
 
+  // Mouse handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1 || e.altKey) {
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+      return;
+    }
+
+    const handle = getHandleAt(e.clientX, e.clientY, 18);
+    if (handle) {
+      setActiveHandle(handle);
+      dragStartRef.current = {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        initialCrop: { ...cropBox },
+      };
+    } else {
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning) {
+      setPan({
+        x: e.clientX - panStartRef.current.x,
+        y: e.clientY - panStartRef.current.y,
+      });
+      return;
+    }
+
+    if (!activeHandle) {
+      const handle = getHandleAt(e.clientX, e.clientY, 18);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      if (handle === 'inside') canvas.style.cursor = 'move';
+      else if (handle === 'tl' || handle === 'br') canvas.style.cursor = 'nwse-resize';
+      else if (handle === 'tr' || handle === 'bl') canvas.style.cursor = 'nesw-resize';
+      else if (handle === 'top' || handle === 'bottom') canvas.style.cursor = 'ns-resize';
+      else if (handle === 'left' || handle === 'right') canvas.style.cursor = 'ew-resize';
+      else canvas.style.cursor = 'default';
+      return;
+    }
+
+    applyCropDelta(e.clientX, e.clientY);
+  };
+
   const handleMouseUp = () => {
     setActiveHandle(null);
     setIsPanning(false);
+  };
+
+  // Touch Handlers for Mobile Phones & Tablets
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Two-finger gesture: pinch to zoom
+      setIsPanning(false);
+      setActiveHandle(null);
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      touchPinchRef.current = {
+        initialDist: dist,
+        initialZoom: zoom,
+      };
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      // Use generous hit radius (30px) for mobile finger touch targets
+      const handle = getHandleAt(touch.clientX, touch.clientY, 30);
+
+      if (handle) {
+        setActiveHandle(handle);
+        setIsPanning(false);
+        dragStartRef.current = {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+          initialCrop: { ...cropBox },
+        };
+      } else {
+        setActiveHandle(null);
+        setIsPanning(true);
+        panStartRef.current = { x: touch.clientX - pan.x, y: touch.clientY - pan.y };
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchPinchRef.current) {
+      // Pinch to zoom calculation
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      const scale = dist / (touchPinchRef.current.initialDist || 1);
+      const targetZoom = Math.max(0.4, Math.min(4.0, touchPinchRef.current.initialZoom * scale));
+      setZoom(targetZoom);
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      if (isPanning) {
+        setPan({
+          x: touch.clientX - panStartRef.current.x,
+          y: touch.clientY - panStartRef.current.y,
+        });
+      } else if (activeHandle) {
+        applyCropDelta(touch.clientX, touch.clientY);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setActiveHandle(null);
+    setIsPanning(false);
+    touchPinchRef.current = null;
   };
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -542,16 +618,16 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-gray-950 rounded-2xl overflow-hidden shadow-sm border border-gray-800">
-      {/* Top Overlay Controls Bar */}
-      <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+    <div className="relative w-full h-full flex flex-col bg-gray-950 rounded-2xl overflow-hidden shadow-sm border border-gray-800 touch-none select-none">
+      {/* Top Overlay Controls Bar (Mobile-friendly responsive scrollable bar) */}
+      <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-2 pointer-events-none overflow-x-auto no-scrollbar">
         {/* Undo / Redo & Mode Pill */}
-        <div className="flex items-center gap-1 bg-gray-900/90 backdrop-blur-md border border-gray-700/80 p-1 rounded-xl shadow-lg pointer-events-auto">
+        <div className="flex items-center gap-1 bg-gray-900/95 backdrop-blur-md border border-gray-700/80 p-1 rounded-xl shadow-lg pointer-events-auto shrink-0">
           <button
             id="btn-crop-undo"
             onClick={onUndo}
             disabled={!canUndo}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            className="p-2 sm:p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
             title="Undo (Ctrl+Z)"
           >
             <Undo2 className="w-4 h-4" />
@@ -560,33 +636,34 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             id="btn-crop-redo"
             onClick={onRedo}
             disabled={!canRedo}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            className="p-2 sm:p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
             title="Redo (Ctrl+Y)"
           >
             <Redo2 className="w-4 h-4" />
           </button>
           <div className="w-[1px] h-4 bg-gray-700 mx-1" />
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase tracking-wider">
-            {aspectRatioMode} Ratio
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase tracking-wider whitespace-nowrap">
+            {aspectRatioMode}
           </span>
         </div>
 
         {/* View & Automation Actions */}
-        <div className="flex items-center gap-1 bg-gray-900/90 backdrop-blur-md border border-gray-700/80 p-1 rounded-xl shadow-lg pointer-events-auto">
+        <div className="flex items-center gap-1 bg-gray-900/95 backdrop-blur-md border border-gray-700/80 p-1 rounded-xl shadow-lg pointer-events-auto shrink-0">
           <button
             id="btn-auto-crop"
             onClick={onAutoDetect}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-sky-300 bg-sky-950/60 hover:bg-sky-900/80 border border-sky-700/60 transition-colors shadow-xs"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold text-sky-300 bg-sky-950/60 hover:bg-sky-900/80 active:bg-sky-800 border border-sky-700/60 transition-colors shadow-xs cursor-pointer whitespace-nowrap"
             title="Auto detect document & card edges"
           >
-            <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-            <span>Auto Detect</span>
+            <Sparkles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span className="hidden sm:inline">Auto Detect</span>
+            <span className="sm:hidden">Auto</span>
           </button>
 
           <button
             id="btn-rotate-card"
             onClick={onRotate}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+            className="p-2 sm:p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 transition-colors cursor-pointer"
             title="Rotate 90° Clockwise"
           >
             <RotateCw className="w-4 h-4" />
@@ -595,7 +672,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           <button
             id="btn-toggle-grid"
             onClick={onToggleGrid}
-            className={`p-1.5 rounded-lg transition-colors ${
+            className={`p-2 sm:p-1.5 rounded-lg transition-colors cursor-pointer ${
               showGrid
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-300 hover:text-white hover:bg-gray-800'
@@ -608,7 +685,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           <button
             id="btn-toggle-boundary"
             onClick={onToggleBoundaryGuide}
-            className={`p-1.5 rounded-lg transition-colors ${
+            className={`p-2 sm:p-1.5 rounded-lg transition-colors cursor-pointer ${
               showBoundaryGuide
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-300 hover:text-white hover:bg-gray-800'
@@ -621,7 +698,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           <button
             id="btn-reset-crop"
             onClick={onReset}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+            className="p-2 sm:p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 transition-colors cursor-pointer"
             title="Reset Crop to Center"
           >
             <RefreshCw className="w-4 h-4" />
@@ -629,57 +706,61 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         </div>
       </div>
 
-      {/* Main Interactive Canvas Area */}
+      {/* Main Interactive Canvas Area (Desktop mouse + Mobile touch with touch-action: none) */}
       <div
         ref={containerRef}
-        className="flex-1 w-full h-full relative cursor-crosshair bg-gray-950 overflow-hidden"
+        className="flex-1 w-full h-full relative cursor-crosshair bg-gray-950 overflow-hidden touch-none"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         onWheel={handleWheel}
       >
-        <canvas ref={canvasRef} className="block w-full h-full" />
+        <canvas ref={canvasRef} className="block w-full h-full touch-none" />
       </div>
 
       {/* Bottom Floating Zoom & Pan Controls */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-gray-900/90 backdrop-blur-md border border-gray-700/80 px-2.5 py-1.5 rounded-xl shadow-lg">
+      <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 sm:gap-1.5 bg-gray-900/95 backdrop-blur-md border border-gray-700/80 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl shadow-lg max-w-[calc(100%-1rem)] overflow-x-auto no-scrollbar">
         <button
           onClick={zoomOut}
-          className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          className="p-1.5 sm:p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 transition-colors cursor-pointer"
           title="Zoom Out (-)"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
-        <span className="text-xs font-mono text-gray-300 font-semibold px-1">
+        <span className="text-xs font-mono text-gray-300 font-semibold px-1 min-w-[36px] text-center">
           {Math.round(zoom * 100)}%
         </span>
         <button
           onClick={zoomIn}
-          className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          className="p-1.5 sm:p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 transition-colors cursor-pointer"
           title="Zoom In (+)"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
 
-        <div className="w-[1px] h-4 bg-gray-700 mx-1" />
+        <div className="w-[1px] h-4 bg-gray-700 mx-0.5 sm:mx-1" />
 
         <button
           onClick={fitToScreen}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] sm:text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 transition-colors cursor-pointer whitespace-nowrap"
           title="Fit Document to Screen"
         >
-          <Maximize className="w-3.5 h-3.5" />
-          <span>Fit Screen</span>
+          <Maximize className="w-3.5 h-3.5 shrink-0" />
+          <span className="hidden xs:inline">Fit Screen</span>
         </button>
 
         <button
           onClick={fitToCrop}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] sm:text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-800 active:bg-gray-700 transition-colors cursor-pointer whitespace-nowrap"
           title="Focus on Selected Card Region"
         >
-          <Move className="w-3.5 h-3.5" />
-          <span>Fit Card</span>
+          <Move className="w-3.5 h-3.5 shrink-0" />
+          <span className="hidden xs:inline">Fit Card</span>
         </button>
       </div>
     </div>

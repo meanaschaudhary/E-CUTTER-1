@@ -23,16 +23,16 @@ export const FrontBackTabs: React.FC<FrontBackTabsProps> = ({
   const currentPageIdx = currentSideObj.pageIndex;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-2xs mb-4 space-y-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="bg-white border border-gray-200 rounded-xl p-2.5 sm:p-3 shadow-2xs mb-4 space-y-2.5">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
         {/* Step Indicator & Tabs */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* Front Side Tab / Step 1 */}
           <button
             id="tab-select-front"
             type="button"
             onClick={() => onSelectSide('front')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeSide === 'front'
                 ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-700/20'
                 : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
@@ -45,7 +45,7 @@ export const FrontBackTabs: React.FC<FrontBackTabsProps> = ({
             >
               1
             </div>
-            <span>STEP 1: CROP FRONT SIZE</span>
+            <span className="whitespace-nowrap">FRONT</span>
             {doc.pageCount > 1 && (
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
@@ -54,12 +54,10 @@ export const FrontBackTabs: React.FC<FrontBackTabsProps> = ({
                     : 'bg-gray-200 text-gray-600'
                 }`}
               >
-                Page {doc.front.pageIndex + 1}
+                P{doc.front.pageIndex + 1}
               </span>
             )}
           </button>
-
-          <ChevronRight className="w-4 h-4 text-gray-400 hidden sm:inline" />
 
           {/* Back Side Tab / Step 2 */}
           {doc.hasBackSide ? (
@@ -67,7 +65,7 @@ export const FrontBackTabs: React.FC<FrontBackTabsProps> = ({
               id="tab-select-back"
               type="button"
               onClick={() => onSelectSide('back')}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeSide === 'back'
                   ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-600/20'
                   : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
@@ -80,7 +78,7 @@ export const FrontBackTabs: React.FC<FrontBackTabsProps> = ({
               >
                 2
               </div>
-              <span>STEP 2: CROP BACK SIZE</span>
+              <span className="whitespace-nowrap">BACK</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
                   activeSide === 'back'
@@ -88,7 +86,7 @@ export const FrontBackTabs: React.FC<FrontBackTabsProps> = ({
                     : 'bg-gray-200 text-gray-600'
                 }`}
               >
-                {doc.pageCount > 1 ? `Page ${(doc.back?.pageIndex ?? 0) + 1}` : 'Same Page'}
+                {doc.pageCount > 1 ? `P${(doc.back?.pageIndex ?? 0) + 1}` : 'P1'}
               </span>
             </button>
           ) : (
@@ -96,38 +94,38 @@ export const FrontBackTabs: React.FC<FrontBackTabsProps> = ({
               id="btn-add-back-side"
               type="button"
               onClick={() => onToggleHasBackSide(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition-colors cursor-pointer"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 text-emerald-700" />
-              <span>+ Add Back Side from Same PDF</span>
+              <span>+ Add Back</span>
             </button>
           )}
         </div>
 
         {/* Action Shortcuts */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
           {doc.hasBackSide && (
             <>
               <button
                 id="btn-swap-sides"
                 type="button"
                 onClick={onSwapSides}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-200 transition-colors cursor-pointer"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-200 transition-colors cursor-pointer"
                 title="Swap Front and Back assignments"
               >
                 <ArrowLeftRight className="w-3.5 h-3.5 text-gray-500" />
-                <span className="hidden md:inline">Swap Front / Back</span>
+                <span>Swap</span>
               </button>
 
               <button
                 id="btn-remove-back"
                 type="button"
                 onClick={() => onToggleHasBackSide(false)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 border border-red-200 transition-colors cursor-pointer"
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 border border-red-200 transition-colors cursor-pointer"
                 title="Remove Back Side (Single side print)"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Remove Back</span>
+                <span>Remove</span>
               </button>
             </>
           )}

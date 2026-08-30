@@ -446,7 +446,7 @@ export const Editor: React.FC<EditorProps> = ({
       {/* Main Studio Grid: Left Canvas Area (7 cols) + Right Controls Area (5 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Crop Studio Canvas */}
-        <div className="lg:col-span-7 h-[580px] lg:h-[680px] flex flex-col">
+        <div className="lg:col-span-7 h-[400px] sm:h-[520px] lg:h-[650px] flex flex-col">
           <CropCanvas
             imageSrc={currentPage.dataUrl}
             cropBox={currentSideState.cropBox}

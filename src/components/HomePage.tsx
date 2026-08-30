@@ -270,7 +270,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                         });
                       }}
                       title="Inspect High-Res Card Image"
-                      className="absolute bottom-1.5 right-1.5 px-2 py-1 rounded-lg bg-white/95 hover:bg-white text-[#002B5B] border border-gray-200 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-sm cursor-pointer flex items-center gap-1"
+                      className="absolute bottom-1.5 right-1.5 px-2 py-1 rounded-lg bg-white/95 hover:bg-white text-[#002B5B] border border-gray-200 text-[10px] font-bold opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-sm cursor-pointer flex items-center gap-1"
                     >
                       <Sparkles className="w-3 h-3 text-[#C5A059]" />
                       <span>Preview</span>
@@ -417,16 +417,16 @@ export const HomePage: React.FC<HomePageProps> = ({
       {/* LIGHTBOX PREVIEW MODAL */}
       {previewImage && (
         <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
           onClick={() => setPreviewImage(null)}
         >
           <div
-            className="bg-white border border-gray-200 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-4"
+            className="bg-white border border-gray-200 rounded-3xl p-4 sm:p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div>
-                <h3 className="text-lg font-bold text-gray-950">{previewImage.title}</h3>
+                <h3 className="text-base sm:text-lg font-bold text-gray-950">{previewImage.title}</h3>
                 <p className="text-xs text-gray-500">{previewImage.subtitle}</p>
               </div>
               <button
@@ -438,17 +438,19 @@ export const HomePage: React.FC<HomePageProps> = ({
               </button>
             </div>
 
-            <div className="rounded-2xl overflow-hidden bg-white p-4 border border-gray-200/80 shadow-xs flex items-center justify-center">
+            <div className="rounded-2xl overflow-hidden bg-white p-2 sm:p-4 border border-gray-200/80 shadow-xs flex items-center justify-center">
               <img
                 src={previewImage.src}
                 alt={previewImage.title}
-                className="w-full max-h-[60vh] object-contain rounded-xl drop-shadow-md"
+                className="w-full max-h-[50vh] sm:max-h-[60vh] object-contain rounded-xl drop-shadow-md"
                 referrerPolicy="no-referrer"
               />
             </div>
 
-            <div className="flex items-center justify-between text-xs text-gray-600 pt-2">
-              <span className="font-mono text-[#002B5B] font-semibold">Standard CR80 Size • 1800 DPI Ultra Sharp</span>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-600 pt-2">
+              <span className="font-mono text-[#002B5B] font-semibold text-center sm:text-left">
+                Standard CR80 Size • 1800 DPI Ultra Sharp
+              </span>
               <button
                 type="button"
                 onClick={() => {
@@ -456,7 +458,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   if (s) handleSelectService(s);
                   setPreviewImage(null);
                 }}
-                className="px-5 py-2.5 rounded-xl bg-[#002B5B] hover:bg-[#001f42] text-white font-bold transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#002B5B] hover:bg-[#001f42] text-white font-bold transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
               >
                 <Sparkles className="w-4 h-4 text-[#C5A059]" />
                 <span>Crop &amp; Print This Card</span>
