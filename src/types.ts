@@ -28,6 +28,7 @@ export interface CardTemplate {
   recommendedDpi?: number;
   isCustom?: boolean;
   badgeText?: string;
+  imageSrc?: string;
 }
 
 export interface CropBox {
@@ -122,9 +123,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'Standard UIDAI CR80 Plastic Card (86 × 54 mm)',
     badgeText: 'Official CR80',
+    imageSrc: '/services/cards/aadhaar.png',
   },
   {
     id: 'pan-card',
@@ -133,9 +135,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'Income Tax Department NSDL / UTIITSL Card (86 × 54 mm)',
     badgeText: 'Standard ID',
+    imageSrc: '/services/cards/pan.png',
   },
   {
     id: 'ayushman-pmjay',
@@ -144,9 +147,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'National Health Authority Golden Card (86 × 54 mm)',
     badgeText: 'Health Scheme',
+    imageSrc: '/services/cards/ayushman.png',
   },
   {
     id: 'abha-card',
@@ -155,9 +159,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'Ayushman Bharat Digital Health Account ID Card',
     badgeText: 'Digital Health',
+    imageSrc: '/services/cards/abha.png',
   },
   {
     id: 'voter-id',
@@ -166,9 +171,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'Election Commission of India e-EPIC format (86 × 54 mm)',
     badgeText: 'ECI Format',
+    imageSrc: '/services/cards/voter.png',
   },
   {
     id: 'driving-licence',
@@ -177,9 +183,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'Ministry of Road Transport & Highways Smart Card',
     badgeText: 'Sarathi Format',
+    imageSrc: '/services/cards/driving-license.png',
   },
   {
     id: 'aadhaar-letter',
@@ -188,9 +195,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 100.0,
     heightMm: 140.0,
     isCR80: false,
-    recommendedDpi: 300,
+    recommendedDpi: 600,
     description: 'Full laminated letter cutout format with address',
     badgeText: 'Extended Slip',
+    imageSrc: '/services/cards/aadhaar.png',
   },
   {
     id: 'ration-card',
@@ -199,9 +207,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 95.0,
     heightMm: 65.0,
     isCR80: false,
-    recommendedDpi: 300,
+    recommendedDpi: 600,
     description: 'NFSA / State Food & Civil Supplies Card format',
     badgeText: 'State Format',
+    imageSrc: '/services/cards/ration.png',
   },
   {
     id: 'govt-employee-id',
@@ -210,20 +219,22 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'Standard Horizontal / Vertical Departmental ID',
     badgeText: 'Service ID',
+    imageSrc: '/services/cards/employee.png',
   },
   {
     id: 'other-gov-card',
-    name: 'Other Government Card',
+    name: 'E-Shram / Other Govt Card',
     category: 'custom',
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: true,
-    recommendedDpi: 600,
-    description: 'Flexible template with customizable dimensions',
-    badgeText: 'Customizable',
+    recommendedDpi: 1800,
+    description: 'National Labour & Other Welfare Cards',
+    badgeText: 'e-Shram / Govt',
+    imageSrc: '/services/cards/eshram.png',
   },
   {
     id: 'custom-card',
@@ -232,9 +243,10 @@ export const OFFICIAL_TEMPLATES: CardTemplate[] = [
     widthMm: 86.0,
     heightMm: 54.0,
     isCR80: false,
-    recommendedDpi: 600,
+    recommendedDpi: 1800,
     description: 'User-defined width and height dimensions',
     badgeText: 'User Defined',
+    imageSrc: '/services/cards/custom.png',
   },
 ];
 
@@ -246,10 +258,10 @@ export const PAPER_DIMENSIONS_MM: Record<PaperSize, { width: number; height: num
 };
 
 export const DPI_PRESETS = [
-  { value: 300, label: '300 DPI (Standard Print)', note: 'Fast processing, ideal for standard inkjet/laser' },
-  { value: 600, label: '600 DPI (High Resolution)', note: 'Recommended for crisp Aadhaar QR & small text' },
+  { value: 1800, label: '1800 DPI (Ultra Max Sharpness)', note: 'Flagship studio density for razor-sharp microtext & QR codes' },
   { value: 1200, label: '1200 DPI (Ultra Fine Detail)', note: 'Maximum precision for photographic PVC badge printers' },
-  { value: 1800, label: '1800 DPI (Maximum Density)', note: 'Extreme density; calculates high pixel buffer' },
+  { value: 600, label: '600 DPI (High Resolution)', note: 'Crisp identity card reproduction' },
+  { value: 300, label: '300 DPI (Standard Print)', note: 'Fast processing, standard draft' },
 ];
 
 export const DEFAULT_PRINT_SETTINGS: PrintSettings = {

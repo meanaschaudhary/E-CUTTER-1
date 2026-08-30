@@ -44,7 +44,7 @@ export const ExportSection: React.FC<ExportSectionProps> = ({
 
   const cardW = doc.targetWidthMm || 86;
   const cardH = doc.targetHeightMm || 54;
-  const dpi = doc.targetDpi || 600;
+  const dpi = doc.targetDpi || 1800;
   const pixelW = Math.round((cardW / 25.4) * dpi);
   const pixelH = Math.round((cardH / 25.4) * dpi);
 

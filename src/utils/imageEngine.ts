@@ -314,7 +314,7 @@ export async function renderCroppedCard(
   adjustments: ImageAdjustments,
   targetWidthMm: number = 86,
   targetHeightMm: number = 54,
-  targetDpi: number = 600
+  targetDpi: number = 1800
 ): Promise<string> {
   const img = await resolveImage(imageSource);
 

@@ -24,6 +24,7 @@ import { CropCanvas } from './CropCanvas';
 import { CardTemplateSelector } from './CardTemplateSelector';
 import { AdjustmentsPanel } from './AdjustmentsPanel';
 import { ResolutionPanel } from './ResolutionPanel';
+import { AazmiLogo } from './AazmiLogo';
 import { detectCardBoundsInImage } from '../utils/imageEngine';
 
 interface EditorProps {
@@ -358,13 +359,16 @@ export const Editor: React.FC<EditorProps> = ({
       <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span
-              className={`w-6 h-6 rounded-full text-white flex items-center justify-center text-xs font-bold ${
-                activeSide === 'front' ? 'bg-blue-700' : 'bg-emerald-600'
-              }`}
-            >
-              {activeSide === 'front' ? '1' : '2'}
-            </span>
+            {activeSide === 'front' ? (
+              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg mr-1">
+                <AazmiLogo size="xs" variant="mark-only" />
+                <span className="text-[11px] font-bold text-amber-900 tracking-wide">FRONT</span>
+              </div>
+            ) : (
+              <span className="w-6 h-6 rounded-full text-white flex items-center justify-center text-xs font-bold bg-emerald-600">
+                2
+              </span>
+            )}
             <h2 className="text-base font-bold text-gray-900">
               {activeSide === 'front' ? 'Crop Front Side' : 'Crop Back Side from Same Document'}
             </h2>
@@ -372,7 +376,7 @@ export const Editor: React.FC<EditorProps> = ({
               {doc.targetWidthMm} × {doc.targetHeightMm} mm
             </span>
           </div>
-          <p className="text-xs text-gray-500 mt-1 pl-8">
+          <p className="text-xs text-gray-500 mt-1">
             {activeSide === 'front'
               ? 'First crop the FRONT side card boundary, then click next to crop the BACK side.'
               : 'Now position the crop frame over the BACK side of the card, then proceed to Print.'}

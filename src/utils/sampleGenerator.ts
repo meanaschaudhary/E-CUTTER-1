@@ -238,7 +238,7 @@ export function generateSampleAadhaarDocument(): UploadedDocument {
     targetWidthMm: 86.0,
     targetHeightMm: 54.0,
     unit: 'mm',
-    targetDpi: 600,
+    targetDpi: 1800,
     front: {
       pageIndex: 0,
       cropBox: frontCrop,
@@ -398,7 +398,7 @@ export function generateSamplePanDocument(): UploadedDocument {
     targetWidthMm: 86.0,
     targetHeightMm: 54.0,
     unit: 'mm',
-    targetDpi: 600,
+    targetDpi: 1800,
     front: {
       pageIndex: 0,
       cropBox: crop,

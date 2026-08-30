@@ -22,11 +22,13 @@ import { PrivacyModal } from './components/PrivacyModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Footer } from './components/Footer';
 import { ToastContainer, ToastMessage } from './components/Toast';
+import { HomePage } from './components/HomePage';
 import { loadPdfDocument, loadImageDocument } from './utils/pdfEngine';
 import { renderCroppedCard, autoProcessFullDocument } from './utils/imageEngine';
 
 export const App: React.FC = () => {
   // Main Application State
+  const [activeTab, setActiveTab] = useState<'home' | 'studio'>('home');
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
   const [document, setDocument] = useState<UploadedDocument | null>(null);
 
@@ -52,7 +54,7 @@ export const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Settings & Preferences
-  const [defaultDpi, setDefaultDpi] = useState<number>(600);
+  const [defaultDpi, setDefaultDpi] = useState<number>(1800);
   const [defaultPaperSize, setDefaultPaperSize] = useState<PaperSize>('A4');
   const [printSettings, setPrintSettings] = useState<PrintSettings>(DEFAULT_PRINT_SETTINGS);
   const [customTemplates, setCustomTemplates] = useState<CardTemplate[]>([]);
@@ -202,6 +204,7 @@ export const App: React.FC = () => {
 
   // 1. Process Uploaded File
   const handleFileUpload = async (file: File) => {
+    setActiveTab('studio');
     setIsUploading(true);
     setUploadProgress({ percent: 15, status: 'Reading document file...' });
 
@@ -469,6 +472,13 @@ export const App: React.FC = () => {
 
       {/* Top Professional Header */}
       <Navbar
+        activeTab={activeTab}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab);
+          if (tab === 'studio' && !document) {
+            setCurrentStep('upload');
+          }
+        }}
         onOpenFile={() => fileInputRef.current?.click()}
         onOpenHelp={() => setIsHelpOpen(true)}
         onOpenPrivacy={() => setIsPrivacyOpen(true)}
@@ -477,70 +487,93 @@ export const App: React.FC = () => {
         hasDocument={!!document}
       />
 
-      {/* 4-Step Interactive Workflow Indicator */}
-      <WorkflowBar
-        currentStep={
-          currentStep === 'upload'
-            ? 'upload'
-            : currentStep === 'crop' || currentStep === 'pages'
-            ? document?.activeSide === 'back'
-              ? 'crop-back'
-              : 'crop-front'
-            : 'export'
-        }
-        onStepClick={(step) => {
-          if (step === 'upload') {
-            handleClearWorkspace();
-          } else if (step === 'crop-front') {
-            if (document) {
-              setDocument({ ...document, activeSide: 'front' });
-              setCurrentStep('crop');
-            }
-          } else if (step === 'crop-back') {
-            if (document) {
-              if (!document.hasBackSide || !document.back) {
-                const backPageIndex = document.pageCount > 1 ? 1 : 0;
-                const isAadhaarLike = document.selectedTemplateId.includes('aadhaar');
-                setDocument({
-                  ...document,
-                  hasBackSide: true,
-                  activeSide: 'back',
-                  back: {
-                    pageIndex: backPageIndex,
-                    cropBox: isAadhaarLike && backPageIndex === 0
-                      ? { x: 0.52, y: 0.60, width: 0.42, height: 0.33 }
-                      : { x: 0.08, y: 0.15, width: 0.84, height: 0.70 },
-                    rotation: 0,
-                    adjustments: {
-                      brightness: 0,
-                      contrast: 0,
-                      saturation: 0,
-                      sharpen: 'none',
-                      grayscale: false,
-                    },
-                    aspectRatioMode: document.front.aspectRatioMode,
-                    customRatioWidth: document.targetWidthMm,
-                    customRatioHeight: document.targetHeightMm,
-                  },
-                });
-              } else {
-                setDocument({ ...document, activeSide: 'back' });
-              }
-              setCurrentStep('crop');
-            }
-          } else if (step === 'export') {
-            handleProceedToPrint();
+      {/* 4-Step Interactive Workflow Indicator (Only in Studio view) */}
+      {activeTab === 'studio' && (
+        <WorkflowBar
+          currentStep={
+            currentStep === 'upload'
+              ? 'upload'
+              : currentStep === 'crop' || currentStep === 'pages'
+              ? document?.activeSide === 'back'
+                ? 'crop-back'
+                : 'crop-front'
+              : 'export'
           }
-        }}
-        hasDocument={!!document}
-        hasBackSide={!!document?.hasBackSide}
-        hasCropped={!!frontCardUrl}
-      />
+          onStepClick={(step) => {
+            if (step === 'upload') {
+              handleClearWorkspace();
+            } else if (step === 'crop-front') {
+              if (document) {
+                setDocument({ ...document, activeSide: 'front' });
+                setCurrentStep('crop');
+              }
+            } else if (step === 'crop-back') {
+              if (document) {
+                if (!document.hasBackSide || !document.back) {
+                  const backPageIndex = document.pageCount > 1 ? 1 : 0;
+                  const isAadhaarLike = document.selectedTemplateId.includes('aadhaar');
+                  setDocument({
+                    ...document,
+                    hasBackSide: true,
+                    activeSide: 'back',
+                    back: {
+                      pageIndex: backPageIndex,
+                      cropBox: isAadhaarLike && backPageIndex === 0
+                        ? { x: 0.52, y: 0.60, width: 0.42, height: 0.33 }
+                        : { x: 0.08, y: 0.15, width: 0.84, height: 0.70 },
+                      rotation: 0,
+                      adjustments: {
+                        brightness: 0,
+                        contrast: 0,
+                        saturation: 0,
+                        sharpen: 'none',
+                        grayscale: false,
+                      },
+                      aspectRatioMode: document.front.aspectRatioMode,
+                      customRatioWidth: document.targetWidthMm,
+                      customRatioHeight: document.targetHeightMm,
+                    },
+                  });
+                } else {
+                  setDocument({ ...document, activeSide: 'back' });
+                }
+                setCurrentStep('crop');
+              }
+            } else if (step === 'export') {
+              handleProceedToPrint();
+            }
+          }}
+          hasDocument={!!document}
+          hasBackSide={!!document?.hasBackSide}
+          hasCropped={!!frontCardUrl}
+        />
+      )}
 
       {/* Main Dynamic Workspace Body */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-8 py-6">
-        {/* STEP 1: CARD SELECTION & UPLOAD SCREEN */}
-        {currentStep === 'upload' && (
+        {/* TAB 1: HOME PAGE */}
+        {activeTab === 'home' && (
+          <HomePage
+            onStartCrop={(tmpl) => {
+              if (tmpl) {
+                setSelectedCardTemplate(tmpl);
+              }
+              setActiveTab('studio');
+              if (!document) {
+                setCurrentStep('upload');
+              }
+            }}
+            onFileUpload={(file) => {
+              setActiveTab('studio');
+              handleFileUpload(file);
+            }}
+            onOpenHelp={() => setIsHelpOpen(true)}
+            onOpenPrivacy={() => setIsPrivacyOpen(true)}
+          />
+        )}
+
+        {/* TAB 2: STUDIO WORKSPACE */}
+        {activeTab === 'studio' && currentStep === 'upload' && (
           <FileUploader
             selectedTemplate={selectedCardTemplate}
             onSelectTemplate={setSelectedCardTemplate}
@@ -557,7 +590,7 @@ export const App: React.FC = () => {
         )}
 
         {/* STEP 2: MULTI-PAGE SELECTOR */}
-        {currentStep === 'pages' && document && (
+        {activeTab === 'studio' && currentStep === 'pages' && document && (
           <PageSelector
             document={document}
             onSelectFrontPage={(idx) =>
@@ -609,7 +642,7 @@ export const App: React.FC = () => {
         )}
 
         {/* STEP 3: CROP STUDIO & ENHANCEMENT EDITOR */}
-        {currentStep === 'crop' && document && (
+        {activeTab === 'studio' && currentStep === 'crop' && document && (
           <Editor
             document={document}
             onUpdateDocument={setDocument}
@@ -621,7 +654,7 @@ export const App: React.FC = () => {
         )}
 
         {/* STEP 4: PRINT LAYOUT VIEW */}
-        {currentStep === 'print' && document && (
+        {activeTab === 'studio' && currentStep === 'print' && document && (
           <div className="max-w-6xl mx-auto py-4 space-y-6">
             <div className="flex items-center justify-between">
               <button
@@ -651,7 +684,7 @@ export const App: React.FC = () => {
         )}
 
         {/* STEP 5: FINAL EXPORT & DOWNLOAD HUB */}
-        {currentStep === 'export' && document && (
+        {activeTab === 'studio' && currentStep === 'export' && document && (
           <ExportSection
             document={document}
             frontCardUrl={frontCardUrl}

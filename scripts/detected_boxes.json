@@ -1,0 +1,14 @@
+```json
+[
+  {"id": "aadhaar", "name": "Aadhaar Card", "box2d": [58, 12, 327, 321]},
+  {"id": "pan", "name": "PAN Card", "box2d": [60, 342, 327, 655]},
+  {"id": "voter_id", "name": "Voter ID (EPIC)", "box2d": [60, 678, 328, 988]},
+  {"id": "driving_license", "name": "Driving License", "box2d": [406, 12, 658, 320]},
+  {"id": "ayushman", "name": "Ayushman Card", "box2d": [406, 342, 658, 655]},
+  {"id": "abha", "name": "ABHA Card", "box2d": [406, 678, 658, 988]},
+  {"id": "e_shram", "name": "E Shram Card", "box2d": [730, 12, 965, 248]},
+  {"id": "ration", "name": "Ration Card", "box2d": [730, 267, 965, 487]},
+  {"id": "pvc_employee", "name": "PVC Employee Card", "box2d": [740, 503, 965, 729]},
+  {"id": "custom", "name": "Custom Any Card", "box2d": [740, 753, 965, 978]}
+]
+```

@@ -62,7 +62,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Default Output Quality / DPI
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {[300, 600, 1200, 1800].map((dpi) => (
+              {[1800, 1200, 600, 300].map((dpi) => (
                 <button
                   key={dpi}
                   onClick={() => onUpdateDefaultDpi(dpi)}
@@ -74,7 +74,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <span>{dpi} DPI</span>
                   <span className="block font-normal text-[10px] text-gray-500">
-                    {dpi === 600 ? 'Recommended for PVC Cards' : `${dpi} DPI rasterization`}
+                    {dpi === 1800
+                      ? 'Flagship Ultra Sharpness'
+                      : dpi === 1200
+                      ? 'Fine Photographic Detail'
+                      : dpi === 600
+                      ? 'Standard High Resolution'
+                      : 'Fast Draft Print'}
                   </span>
                 </button>
               ))}

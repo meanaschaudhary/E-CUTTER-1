@@ -18,6 +18,8 @@ import {
   Info,
 } from 'lucide-react';
 import { CardTemplate, OFFICIAL_TEMPLATES } from '../types';
+import { AazmiLogo } from './AazmiLogo';
+import { SERVICES_LIST } from '../data/serviceData';
 
 interface FileUploaderProps {
   selectedTemplate: CardTemplate;
@@ -202,13 +204,24 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
                     : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/70'
                 }`}
               >
-                <div
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mr-3 mt-0.5 ${
-                    isSelected ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                </div>
+                {tmpl.imageSrc ? (
+                  <div className="w-12 h-8 rounded-md overflow-hidden bg-white border border-gray-200 shrink-0 mr-3 mt-0.5 shadow-xs p-0.5 flex items-center justify-center">
+                    <img
+                      src={tmpl.imageSrc}
+                      alt={tmpl.name}
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mr-3 mt-0.5 ${
+                      isSelected ? 'bg-blue-700 text-white' : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </div>
+                )}
 
                 <div className="flex-1 min-w-0 pr-6">
                   <div className="flex items-center gap-1.5">
