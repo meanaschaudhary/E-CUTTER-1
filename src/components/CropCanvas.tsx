@@ -12,12 +12,13 @@ import {
   RefreshCw,
   Move,
 } from 'lucide-react';
-import { CropBox, AspectRatioMode } from '../types';
+import { CropBox, AspectRatioMode, ImageAdjustments } from '../types';
 
 interface CropCanvasProps {
   imageSrc: string;
   cropBox: CropBox;
   rotation: number;
+  adjustments?: ImageAdjustments;
   aspectRatioMode: AspectRatioMode;
   targetWidthMm: number;
   targetHeightMm: number;
@@ -51,6 +52,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   imageSrc,
   cropBox,
   rotation,
+  adjustments,
   aspectRatioMode,
   targetWidthMm,
   targetHeightMm,
@@ -159,12 +161,25 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     const renderX = centerX - renderW / 2;
     const renderY = centerY - renderH / 2;
 
+    // Apply real-time visual adjustments if active
+    if (adjustments) {
+      const { brightness = 0, contrast = 0, saturation = 0, grayscale = false } = adjustments;
+      const bVal = 100 + brightness; // e.g. -50..+50 => 50%..150%
+      const cVal = 100 + contrast;   // e.g. -50..+50 => 50%..150%
+      const sVal = grayscale ? 0 : 100 + saturation; // e.g. -50..+50 => 50%..150%
+      const gVal = grayscale ? 100 : 0;
+      ctx.filter = `brightness(${bVal}%) contrast(${cVal}%) saturate(${sVal}%) grayscale(${gVal}%)`;
+    } else {
+      ctx.filter = 'none';
+    }
+
     // Draw document image with rotation
     ctx.save();
     ctx.translate(centerX, centerY);
     ctx.rotate((rotation * Math.PI) / 180);
     ctx.drawImage(img, -renderW / 2, -renderH / 2, renderW, renderH);
     ctx.restore();
+    ctx.filter = 'none';
 
     // Calculate crop rectangle on canvas screen
     const cropScreenX = renderX + cropBox.x * renderW;
@@ -287,6 +302,10 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   }, [
     cropBox,
     rotation,
+    adjustments?.brightness,
+    adjustments?.contrast,
+    adjustments?.saturation,
+    adjustments?.grayscale,
     zoom,
     pan,
     showGrid,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Sparkles, Sun, Contrast, Droplet, RefreshCw } from 'lucide-react';
+import { Sliders, Sparkles, Sun, Contrast, Droplet, RefreshCw, Wand2 } from 'lucide-react';
 import { ImageAdjustments, SharpenLevel } from '../types';
 
 interface AdjustmentsPanelProps {
@@ -33,6 +33,17 @@ export const AdjustmentsPanel: React.FC<AdjustmentsPanelProps> = ({
     onChange({ ...adjustments, grayscale: e.target.checked });
   };
 
+  // Quick One-Click Magic Optimization Preset (for faded Aadhaar/Govt cards)
+  const handleAutoEnhance = () => {
+    onChange({
+      brightness: 5,
+      contrast: 15,
+      saturation: 10,
+      sharpen: 'medium',
+      grayscale: false,
+    });
+  };
+
   const isDefault =
     adjustments.brightness === 0 &&
     adjustments.contrast === 0 &&
@@ -50,16 +61,28 @@ export const AdjustmentsPanel: React.FC<AdjustmentsPanelProps> = ({
             Image Quality &amp; Enhancement
           </h3>
         </div>
-        <button
-          id="btn-reset-adjustments"
-          type="button"
-          onClick={onReset}
-          disabled={isDefault}
-          className="text-[11px] font-semibold text-gray-500 hover:text-blue-700 disabled:opacity-40 flex items-center gap-1 transition-colors"
-        >
-          <RefreshCw className="w-3 h-3" />
-          <span>Reset</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            id="btn-auto-enhance"
+            type="button"
+            onClick={handleAutoEnhance}
+            className="text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+            title="Auto-enhance text contrast and color for faded cards"
+          >
+            <Wand2 className="w-3 h-3 text-amber-600" />
+            <span>Auto Enhance</span>
+          </button>
+          <button
+            id="btn-reset-adjustments"
+            type="button"
+            onClick={onReset}
+            disabled={isDefault}
+            className="text-[11px] font-semibold text-gray-500 hover:text-blue-700 disabled:opacity-40 flex items-center gap-1 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>Reset</span>
+          </button>
+        </div>
       </div>
 
       {/* Sharpening Kernel Selector */}
@@ -79,7 +102,7 @@ export const AdjustmentsPanel: React.FC<AdjustmentsPanelProps> = ({
               key={lvl}
               type="button"
               onClick={() => handleSharpenChange(lvl)}
-              className={`py-1 rounded-lg font-bold capitalize transition-all ${
+              className={`py-1 rounded-lg font-bold capitalize transition-all cursor-pointer ${
                 adjustments.sharpen === lvl
                   ? 'bg-white text-blue-700 shadow-xs ring-1 ring-gray-200'
                   : 'text-gray-600 hover:text-gray-900'
@@ -170,7 +193,7 @@ export const AdjustmentsPanel: React.FC<AdjustmentsPanelProps> = ({
 
       {/* Integrity Notice */}
       <p className="text-[10px] text-gray-400 italic">
-        Default settings preserve original document colors and UIDAI / Income Tax authenticity.
+        Real-time canvas filter &amp; 300-1800 DPI export integration enabled.
       </p>
     </div>
   );

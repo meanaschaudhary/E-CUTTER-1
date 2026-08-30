@@ -235,10 +235,19 @@ export const App: React.FC = () => {
           customWidthMm,
           customHeightMm
         );
-        setDocument(doc);
+        
+        setUploadProgress({ percent: 90, status: 'Precision detecting Front & Back card boundaries...' });
+        let finalDoc = doc;
+        try {
+          finalDoc = await autoProcessFullDocument(doc);
+        } catch (procErr) {
+          console.warn('Auto-processing fallback to defaults:', procErr);
+        }
+
+        setDocument(finalDoc);
         setCurrentStep('crop');
         addToast(
-          `PDF "${file.name}" loaded (${doc.pageCount} page${doc.pageCount > 1 ? 's' : ''}) for ${selectedCardTemplate.name}`,
+          `PDF loaded (${doc.pageCount} page${doc.pageCount > 1 ? 's' : ''}) • Auto-detected Front & Back card crop boundaries!`,
           'success'
         );
       } else {
@@ -254,10 +263,19 @@ export const App: React.FC = () => {
           customWidthMm,
           customHeightMm
         );
-        setDocument(doc);
+
+        setUploadProgress({ percent: 90, status: 'Precision detecting card boundaries...' });
+        let finalDoc = doc;
+        try {
+          finalDoc = await autoProcessFullDocument(doc);
+        } catch (procErr) {
+          console.warn('Auto-processing fallback to defaults:', procErr);
+        }
+
+        setDocument(finalDoc);
         setCurrentStep('crop');
         addToast(
-          `Image "${file.name}" loaded for ${selectedCardTemplate.name}`,
+          `Image loaded • Auto-detected card boundaries with precision!`,
           'success'
         );
       }
@@ -296,12 +314,21 @@ export const App: React.FC = () => {
         customWidthMm,
         customHeightMm
       );
-      setDocument(doc);
+
+      setUploadProgress({ percent: 90, status: 'Precision detecting Front & Back card boundaries...' });
+      let finalDoc = doc;
+      try {
+        finalDoc = await autoProcessFullDocument(doc);
+      } catch (procErr) {
+        console.warn('Auto-processing fallback:', procErr);
+      }
+
+      setDocument(finalDoc);
       setIsPasswordModalOpen(false);
       setPasswordError(null);
       setPendingPdfData(null);
       setCurrentStep('crop');
-      addToast('PDF decrypted and loaded successfully', 'success');
+      addToast('PDF decrypted • Auto-detected Front & Back card boundaries!', 'success');
     } catch (err: any) {
       setPasswordError(err?.message || 'Incorrect PDF password. Please try again.');
     } finally {

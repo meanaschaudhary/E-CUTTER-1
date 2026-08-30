@@ -125,10 +125,11 @@ export const Editor: React.FC<EditorProps> = ({
       const detected = await detectCardBoundsInImage(
         currentPage.dataUrl,
         activeSide,
-        doc.targetWidthMm / (doc.targetHeightMm || 1)
+        doc.targetWidthMm / (doc.targetHeightMm || 1),
+        doc.selectedTemplateId
       );
       handleCropChange(detected);
-      onAddToast(`Auto-detected ${activeSide.toUpperCase()} card boundaries`, 'success');
+      onAddToast(`Auto-detected ${activeSide.toUpperCase()} card boundaries with high precision!`, 'success');
     } catch (err) {
       console.error(err);
       onAddToast('Could not automatically find card edges. Adjust manually.', 'info');
@@ -451,6 +452,7 @@ export const Editor: React.FC<EditorProps> = ({
             imageSrc={currentPage.dataUrl}
             cropBox={currentSideState.cropBox}
             rotation={currentSideState.rotation}
+            adjustments={currentSideState.adjustments}
             aspectRatioMode={doc.aspectRatioMode}
             targetWidthMm={doc.targetWidthMm}
             targetHeightMm={doc.targetHeightMm}

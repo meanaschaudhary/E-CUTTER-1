@@ -1,24 +1,32 @@
 import { CropBox, ImageAdjustments, SharpenLevel } from '../types';
 
 /**
- * Intelligent Card Boundary Detection using Canvas Computer Vision
- * Scans for high-contrast edges, card borderlines, and content density bounding boxes.
+ * High-Precision Intelligent Card Boundary Detection using Canvas Computer Vision
+ * Scans for high-contrast edges, cutlines, card borderlines, and content density bounding boxes.
+ * Accurately segments Front side (left/top/page 1) and Back side (right/bottom/page 2).
  */
 export async function detectCardBounds(
   imageSource: HTMLImageElement | HTMLCanvasElement,
   cardType?: string,
-  side: 'front' | 'back' = 'front'
+  side: 'front' | 'back' = 'front',
+  targetAspectRatio: number = 86 / 54
 ): Promise<CropBox> {
   const canvas = document.createElement('canvas');
-  const maxDim = 800; // Work at manageable resolution for fast CV analysis
-  const scale = Math.min(1, maxDim / Math.max(imageSource.width, imageSource.height));
+  // High analytical resolution to catch subtle dotted cutlines and sharp card borders
+  const maxDim = 1200;
+  const origW = imageSource instanceof HTMLImageElement ? imageSource.naturalWidth || imageSource.width : imageSource.width;
+  const origH = imageSource instanceof HTMLImageElement ? imageSource.naturalHeight || imageSource.height : imageSource.height;
   
-  canvas.width = Math.max(100, Math.floor(imageSource.width * scale));
-  canvas.height = Math.max(100, Math.floor(imageSource.height * scale));
+  if (!origW || !origH) {
+    return getDefaultCardCropBox(cardType, side);
+  }
+
+  const scale = Math.min(1, maxDim / Math.max(origW, origH));
+  canvas.width = Math.max(100, Math.floor(origW * scale));
+  canvas.height = Math.max(100, Math.floor(origH * scale));
   
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) {
-    // Default CR80 fallback box (centered)
     return getDefaultCardCropBox(cardType, side);
   }
 
@@ -28,66 +36,190 @@ export async function detectCardBounds(
   const w = canvas.width;
   const h = canvas.height;
 
-  // Compute luminance map
+  // Compute Luminance and Sobel Gradients
   const lum = new Float32Array(w * h);
   for (let i = 0; i < data.length; i += 4) {
     lum[i / 4] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
   }
 
-  // 1. Aadhaar Letter heuristic detection:
-  // Standard e-Aadhaar PDF on Page 1 has the printable card at the bottom ~35% - 40% of the A4 page.
-  // Front card is usually bottom-left or bottom-half, Back card is bottom-right or page 2.
-  if (cardType?.includes('aadhaar')) {
-    if (h > w * 1.2) { // Portrait A4 page
-      if (side === 'front') {
-        // Aadhaar front card is standardly located between y: 0.62 to 0.95 and x: 0.08 to 0.52 (or full width)
-        // Let's refine within bottom 45% of page
-        return {
-          x: 0.08,
-          y: 0.64,
-          width: 0.42,
-          height: 0.28,
-        };
-      } else {
-        // Aadhaar back card is often bottom right
-        return {
-          x: 0.50,
-          y: 0.64,
-          width: 0.42,
-          height: 0.28,
-        };
+  // Sample background color from four outer corners
+  const sampleSize = Math.max(3, Math.floor(Math.min(w, h) * 0.03));
+  let bgSum = 0;
+  let bgCount = 0;
+  for (let dy = 0; dy < sampleSize; dy++) {
+    for (let dx = 0; dx < sampleSize; dx++) {
+      bgSum += lum[dy * w + dx]; // top-left
+      bgSum += lum[dy * w + (w - 1 - dx)]; // top-right
+      bgSum += lum[(h - 1 - dy) * w + dx]; // bottom-left
+      bgSum += lum[(h - 1 - dy) * w + (w - 1 - dx)]; // bottom-right
+      bgCount += 4;
+    }
+  }
+  const bgLuminance = bgSum / bgCount;
+
+  // Compute Sobel vertical & horizontal gradients
+  const gradMag = new Float32Array(w * h);
+  const gradX = new Float32Array(w * h);
+  const gradY = new Float32Array(w * h);
+
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      // Sobel horizontal
+      const gx =
+        -lum[(y - 1) * w + (x - 1)] + lum[(y - 1) * w + (x + 1)] +
+        -2 * lum[y * w + (x - 1)] + 2 * lum[y * w + (x + 1)] +
+        -lum[(y + 1) * w + (x - 1)] + lum[(y + 1) * w + (x + 1)];
+
+      // Sobel vertical
+      const gy =
+        -lum[(y - 1) * w + (x - 1)] - 2 * lum[(y - 1) * w + x] - lum[(y - 1) * w + (x + 1)] +
+        lum[(y + 1) * w + (x - 1)] + 2 * lum[(y + 1) * w + x] + lum[(y + 1) * w + (x + 1)];
+
+      gradX[y * w + x] = Math.abs(gx);
+      gradY[y * w + x] = Math.abs(gy);
+      gradMag[y * w + x] = Math.sqrt(gx * gx + gy * gy);
+    }
+  }
+
+  const isPortraitDocument = h >= w * 1.18; // Standard A4 / Letter PDF sheet
+  const isAadhaarDocument = cardType?.includes('aadhaar');
+
+  // =========================================================================
+  // SCENARIO 1: TALL A4 / LETTER GOVERNMENT PDF (Aadhaar, PAN, Voter, Ayushman)
+  // The bottom 35-45% of the page contains the printable card section with cutline
+  // =========================================================================
+  if (isPortraitDocument || isAadhaarDocument) {
+    // Scan bottom half of page for the horizontal cutline or top card border
+    // Usually cutline or card top is located between y = 0.52 and 0.72 of the page
+    const scanStartY = Math.floor(h * 0.50);
+    const scanEndY = Math.floor(h * 0.74);
+    
+    // Find sharp horizontal edge peak in scan region
+    let bestCutlineY = Math.floor(h * 0.635);
+    let maxHorizEdge = 0;
+
+    for (let y = scanStartY; y < scanEndY; y++) {
+      let rowGrad = 0;
+      // Scan across the middle 80% width
+      for (let x = Math.floor(w * 0.10); x < Math.floor(w * 0.90); x++) {
+        rowGrad += gradY[y * w + x];
+      }
+      if (rowGrad > maxHorizEdge) {
+        maxHorizEdge = rowGrad;
+        bestCutlineY = y;
       }
     }
-  }
 
-  // 2. PAN Card heuristic: e-PAN PDF usually has the rectangular card outline in bottom third
-  if (cardType?.includes('pan')) {
-    if (h > w * 1.2) {
-      return {
-        x: 0.08,
-        y: 0.65,
-        width: 0.84,
-        height: 0.28,
-      };
+    // Top of the card starts slightly below or right at the cutline
+    let cardTopY = bestCutlineY;
+    // If cutline detected, find first content row below it (within 30px)
+    for (let y = bestCutlineY; y < Math.min(h - 20, bestCutlineY + Math.floor(h * 0.05)); y++) {
+      let contentHits = 0;
+      for (let x = Math.floor(w * 0.15); x < Math.floor(w * 0.85); x++) {
+        if (Math.abs(lum[y * w + x] - bgLuminance) > 25) contentHits++;
+      }
+      if (contentHits > w * 0.2) {
+        cardTopY = y;
+        break;
+      }
+    }
+
+    // Find the bottom border of the card section (scanning from bottom up)
+    let cardBottomY = Math.floor(h * 0.965);
+    let maxBottomGrad = 0;
+    for (let y = Math.floor(h * 0.98); y > Math.floor(h * 0.86); y--) {
+      let rowGrad = 0;
+      for (let x = Math.floor(w * 0.10); x < Math.floor(w * 0.90); x++) {
+        rowGrad += gradY[y * w + x];
+      }
+      if (rowGrad > maxBottomGrad) {
+        maxBottomGrad = rowGrad;
+        cardBottomY = y;
+      }
+    }
+
+    // Ensure realistic card height span (typically 24% to 34% of portrait page height)
+    let cardH_px = cardBottomY - cardTopY;
+    if (cardH_px < h * 0.20 || cardH_px > h * 0.38) {
+      cardTopY = Math.floor(h * 0.63);
+      cardBottomY = Math.floor(h * 0.95);
+      cardH_px = cardBottomY - cardTopY;
+    }
+
+    // Determine horizontal split (Center gutter between Front & Back cards)
+    const centerSearchStart = Math.floor(w * 0.45);
+    const centerSearchEnd = Math.floor(w * 0.55);
+    let centerSplitX = Math.floor(w * 0.50);
+    let minCenterDensity = Infinity;
+
+    for (let x = centerSearchStart; x <= centerSearchEnd; x++) {
+      let colDensity = 0;
+      for (let y = cardTopY; y <= cardBottomY; y++) {
+        if (Math.abs(lum[y * w + x] - bgLuminance) > 20) colDensity++;
+      }
+      if (colDensity < minCenterDensity) {
+        minCenterDensity = colDensity;
+        centerSplitX = x;
+      }
+    }
+
+    // Find outer left boundary for Front card
+    let frontLeftX = Math.floor(w * 0.07);
+    let maxLeftEdge = 0;
+    for (let x = Math.floor(w * 0.03); x < Math.floor(w * 0.15); x++) {
+      let colGrad = 0;
+      for (let y = cardTopY; y <= cardBottomY; y++) {
+        colGrad += gradX[y * w + x];
+      }
+      if (colGrad > maxLeftEdge) {
+        maxLeftEdge = colGrad;
+        frontLeftX = x;
+      }
+    }
+
+    // Find outer right boundary for Back card
+    let backRightX = Math.floor(w * 0.93);
+    let maxRightEdge = 0;
+    for (let x = Math.floor(w * 0.85); x < Math.floor(w * 0.97); x++) {
+      let colGrad = 0;
+      for (let y = cardTopY; y <= cardBottomY; y++) {
+        colGrad += gradX[y * w + x];
+      }
+      if (colGrad > maxRightEdge) {
+        maxRightEdge = colGrad;
+        backRightX = x;
+      }
+    }
+
+    // Fine-tune front and back candidate boxes
+    if (side === 'front') {
+      const rawX = frontLeftX / w;
+      const rawY = cardTopY / h;
+      const rawW = (centerSplitX - frontLeftX) / w;
+      const rawH = (cardBottomY - cardTopY) / h;
+      return fitToTargetAspectRatio(rawX, rawY, rawW, rawH, origW, origH, targetAspectRatio);
+    } else {
+      const rawX = (centerSplitX + 2) / w;
+      const rawY = cardTopY / h;
+      const rawW = (backRightX - centerSplitX - 2) / w;
+      const rawH = (cardBottomY - cardTopY) / h;
+      return fitToTargetAspectRatio(rawX, rawY, rawW, rawH, origW, origH, targetAspectRatio);
     }
   }
 
-  // 3. Generic Edge/Gradient Bounding Box Scanner:
-  // Detect where the content starts and ends away from pure white/light margins
-  let minX = w;
-  let maxX = 0;
-  let minY = h;
-  let maxY = 0;
+  // =========================================================================
+  // SCENARIO 2: SCANNED IMAGE / PHOTO (Dual Card Scan or Single Card Isolated)
+  // =========================================================================
+  
+  // Find non-background content bounds
+  let minX = w, maxX = 0, minY = h, maxY = 0;
+  const threshold = Math.abs(bgLuminance - 128) > 50 ? 20 : 28;
 
-  // Background color sampling from corners
-  const bgLuminance = (lum[0] + lum[w - 1] + lum[(h - 1) * w] + lum[h * w - 1]) / 4;
-  const threshold = Math.abs(bgLuminance - 128) > 50 ? 25 : 35;
-
-  // Find bounding box of non-background content
-  for (let y = Math.floor(h * 0.05); y < Math.floor(h * 0.95); y++) {
-    for (let x = Math.floor(w * 0.05); x < Math.floor(w * 0.95); x++) {
-      const val = lum[y * w + x];
-      if (Math.abs(val - bgLuminance) > threshold) {
+  for (let y = Math.floor(h * 0.02); y < Math.floor(h * 0.98); y++) {
+    for (let x = Math.floor(w * 0.02); x < Math.floor(w * 0.98); x++) {
+      const isDiff = Math.abs(lum[y * w + x] - bgLuminance) > threshold;
+      const isEdge = gradMag[y * w + x] > 35;
+      if (isDiff || isEdge) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -96,21 +228,132 @@ export async function detectCardBounds(
     }
   }
 
-  if (maxX > minX + 50 && maxY > minY + 50) {
-    const normX = Math.max(0, Math.min(1, (minX - 5) / w));
-    const normY = Math.max(0, Math.min(1, (minY - 5) / h));
-    const normW = Math.max(0.1, Math.min(1 - normX, (maxX - minX + 10) / w));
-    const normH = Math.max(0.1, Math.min(1 - normY, (maxY - minY + 10) / h));
-
-    return {
-      x: normX,
-      y: normY,
-      width: normW,
-      height: normH,
-    };
+  // If no clear content found, return standard default
+  if (maxX <= minX + 40 || maxY <= minY + 40) {
+    return getDefaultCardCropBox(cardType, side);
   }
 
-  return getDefaultCardCropBox(cardType, side);
+  const contentW = maxX - minX;
+  const contentH = maxY - minY;
+
+  // Check if there are TWO side-by-side cards on this sheet (Landscape or Flatbed scan)
+  const midX = Math.floor((minX + maxX) / 2);
+  let centerValleyDensity = 0;
+  for (let y = minY; y <= maxY; y++) {
+    if (Math.abs(lum[y * w + midX] - bgLuminance) > threshold) {
+      centerValleyDensity++;
+    }
+  }
+
+  // Side-by-side cards layout test (aspect ratio of total content is wide >= 2.2)
+  const isSideBySide = (contentW / contentH >= 2.0) || (centerValleyDensity < contentH * 0.25 && contentW / contentH >= 1.7);
+
+  if (isSideBySide) {
+    // Two cards placed horizontally side-by-side
+    if (side === 'front') {
+      const rawX = minX / w;
+      const rawY = minY / h;
+      const rawW = (midX - minX) / w;
+      const rawH = contentH / h;
+      return fitToTargetAspectRatio(rawX, rawY, rawW, rawH, origW, origH, targetAspectRatio);
+    } else {
+      const rawX = midX / w;
+      const rawY = minY / h;
+      const rawW = (maxX - midX) / w;
+      const rawH = contentH / h;
+      return fitToTargetAspectRatio(rawX, rawY, rawW, rawH, origW, origH, targetAspectRatio);
+    }
+  }
+
+  // Check if two cards are stacked vertically (Top & Bottom)
+  const midY = Math.floor((minY + maxY) / 2);
+  let centerHorizValley = 0;
+  for (let x = minX; x <= maxX; x++) {
+    if (Math.abs(lum[midY * w + x] - bgLuminance) > threshold) {
+      centerHorizValley++;
+    }
+  }
+  const isStackedVertical = (contentH / contentW >= 1.0 && centerHorizValley < contentW * 0.25);
+
+  if (isStackedVertical) {
+    if (side === 'front') {
+      const rawX = minX / w;
+      const rawY = minY / h;
+      const rawW = contentW / w;
+      const rawH = (midY - minY) / h;
+      return fitToTargetAspectRatio(rawX, rawY, rawW, rawH, origW, origH, targetAspectRatio);
+    } else {
+      const rawX = minX / w;
+      const rawY = midY / h;
+      const rawW = contentW / w;
+      const rawH = (maxY - midY) / h;
+      return fitToTargetAspectRatio(rawX, rawY, rawW, rawH, origW, origH, targetAspectRatio);
+    }
+  }
+
+  // Single card scan (fill target aspect ratio directly over detected card bounds)
+  const rawX = minX / w;
+  const rawY = minY / h;
+  const rawW = contentW / w;
+  const rawH = contentH / h;
+  return fitToTargetAspectRatio(rawX, rawY, rawW, rawH, origW, origH, targetAspectRatio);
+}
+
+/**
+ * Fits candidate bounding box coordinates to exact target aspect ratio cleanly and centrally
+ */
+function fitToTargetAspectRatio(
+  rawX: number,
+  rawY: number,
+  rawW: number,
+  rawH: number,
+  imageW: number,
+  imageH: number,
+  targetAR: number // e.g. 86 / 54 = 1.59259
+): CropBox {
+  // Convert normalized box to pixel dimensions in original image
+  let boxPxW = Math.max(20, rawW * imageW);
+  let boxPxH = Math.max(20, rawH * imageH);
+  let boxCenterX = (rawX + rawW / 2) * imageW;
+  let boxCenterY = (rawY + rawH / 2) * imageH;
+
+  const currentAR = boxPxW / boxPxH;
+
+  if (currentAR > targetAR) {
+    // Current box is wider than target ratio -> expand height
+    boxPxH = boxPxW / targetAR;
+  } else {
+    // Current box is taller than target ratio -> expand width
+    boxPxW = boxPxH * targetAR;
+  }
+
+  // Ensure does not exceed image bounds
+  if (boxPxW > imageW) {
+    boxPxW = imageW;
+    boxPxH = boxPxW / targetAR;
+  }
+  if (boxPxH > imageH) {
+    boxPxH = imageH;
+    boxPxW = boxPxH * targetAR;
+  }
+
+  // Calculate new normalized top-left coordinates clamped within image
+  let newX = (boxCenterX - boxPxW / 2) / imageW;
+  let newY = (boxCenterY - boxPxH / 2) / imageH;
+  let newW = boxPxW / imageW;
+  let newH = boxPxH / imageH;
+
+  if (newX < 0) newX = 0;
+  if (newY < 0) newY = 0;
+  if (newX + newW > 1) newX = Math.max(0, 1 - newW);
+  if (newY + newH > 1) newY = Math.max(0, 1 - newH);
+
+  return {
+    x: Math.max(0, Math.min(0.95, Number(newX.toFixed(4)))),
+    y: Math.max(0, Math.min(0.95, Number(newY.toFixed(4)))),
+    width: Math.max(0.05, Math.min(1.0, Number(newW.toFixed(4)))),
+    height: Math.max(0.05, Math.min(1.0, Number(newH.toFixed(4)))),
+  };
 }
 
 /**
@@ -369,10 +612,11 @@ export async function renderCroppedCard(
 export async function detectCardBoundsInImage(
   imageSource: HTMLImageElement | string,
   side: 'front' | 'back' = 'front',
-  targetAspectRatio: number = 86 / 54
+  targetAspectRatio: number = 86 / 54,
+  cardType?: string
 ): Promise<CropBox> {
   const img = await resolveImage(imageSource);
-  return detectCardBounds(img, undefined, side);
+  return detectCardBounds(img, cardType, side, targetAspectRatio);
 }
 
 /**
@@ -382,37 +626,86 @@ export async function autoProcessFullDocument(
   doc: import('../types').UploadedDocument
 ): Promise<import('../types').UploadedDocument> {
   const updated: import('../types').UploadedDocument = { ...doc };
+  const targetAR = (doc.targetWidthMm || 86) / (doc.targetHeightMm || 54);
+  const cardType = doc.selectedTemplateId;
 
-  // Page heuristic
+  // Multi-page or Single-page assignment
   if (doc.pageCount > 1) {
-    updated.front.pageIndex = 0;
-    if (doc.back) {
-      updated.back.pageIndex = 1;
+    updated.front = { ...updated.front, pageIndex: 0 };
+    updated.hasBackSide = true;
+    if (!updated.back) {
+      updated.back = {
+        pageIndex: 1,
+        cropBox: { x: 0.1, y: 0.2, width: 0.8, height: 0.5 },
+        rotation: 0,
+        adjustments: {
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          sharpen: 'none',
+          grayscale: false,
+        },
+        aspectRatioMode: 'cr80',
+        customRatioWidth: doc.targetWidthMm,
+        customRatioHeight: doc.targetHeightMm,
+      };
+    } else {
+      updated.back = { ...updated.back, pageIndex: 1 };
+    }
+  } else {
+    // Single page document: Check if it's an Aadhaar or standard dual-side document
+    const isAadhaarLike = cardType.includes('aadhaar');
+    if (isAadhaarLike || updated.hasBackSide) {
       updated.hasBackSide = true;
+      if (!updated.back) {
+        updated.back = {
+          pageIndex: 0,
+          cropBox: { x: 0.52, y: 0.60, width: 0.42, height: 0.33 },
+          rotation: 0,
+          adjustments: {
+            brightness: 0,
+            contrast: 0,
+            saturation: 0,
+            sharpen: 'none',
+            grayscale: false,
+          },
+          aspectRatioMode: 'cr80',
+          customRatioWidth: doc.targetWidthMm,
+          customRatioHeight: doc.targetHeightMm,
+        };
+      }
     }
   }
 
-  // Detect front crop box
+  // Detect front crop box with pure precision
   const frontPage = doc.pages[updated.front.pageIndex] || doc.pages[0];
   if (frontPage) {
     const frontCrop = await detectCardBoundsInImage(
       frontPage.dataUrl,
       'front',
-      doc.targetWidthMm / doc.targetHeightMm
+      targetAR,
+      cardType
     );
-    updated.front.cropBox = frontCrop;
+    updated.front = {
+      ...updated.front,
+      cropBox: frontCrop,
+    };
   }
 
-  // Detect back crop box if present
+  // Detect back crop box with pure precision
   if (updated.hasBackSide && updated.back) {
     const backPage = doc.pages[updated.back.pageIndex] || doc.pages[0];
     if (backPage) {
       const backCrop = await detectCardBoundsInImage(
         backPage.dataUrl,
         'back',
-        doc.targetWidthMm / doc.targetHeightMm
+        targetAR,
+        cardType
       );
-      updated.back.cropBox = backCrop;
+      updated.back = {
+        ...updated.back,
+        cropBox: backCrop,
+      };
     }
   }
 
